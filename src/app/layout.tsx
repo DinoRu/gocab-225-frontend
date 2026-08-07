@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-// @ts-expect-error - CSS imports are handled by Next.js
 import "./globals.css";
 import { ToastProvider } from "@/components/ui";
 import { AuthProvider } from "@/lib/auth";
