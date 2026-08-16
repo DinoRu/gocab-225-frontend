@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, downloadWithAuth } from "@/lib/api";
 import { useAsync } from "@/lib/useAsync";
 import { formatDate, formatFCFA, formatNumber } from "@/lib/format";
 import type {
+  OrderLineInput,
   PartDetail,
   PurchaseOrder,
   PurchaseOrderItemInput,
@@ -18,6 +19,9 @@ import {
   Pagination,
   useToast,
 } from "@/components/ui";
+import { PartCombobox } from "@/components/PartCombobox";
+import { AuditHistory } from "../../components/AuditHistory";
+import { useAuth } from "../../lib/auth";
 
 const LIMIT = 20;
 
@@ -62,13 +66,6 @@ export default function OrdersPage() {
     [debounced, startDate, endDate, supplierId, brandId, page],
   );
 
-  const exportHref = api.exportUrl({
-    start_date: startDate || undefined,
-    end_date: endDate || undefined,
-    supplier_id: supplierId || undefined,
-    brand_id: brandId || undefined,
-  });
-
   async function confirmDelete() {
     if (!deleting) return;
     setDeleteBusy(true);
@@ -95,14 +92,22 @@ export default function OrdersPage() {
           <div className="sub">Historique des commandes de pièces</div>
         </div>
         <div className="row-flex">
-          <a
+          <button
             className="btn"
-            href={exportHref}
-            target="_blank"
-            rel="noopener noreferrer"
+            onClick={() =>
+              downloadWithAuth(
+                api.exportUrl({
+                  start_date: startDate || undefined,
+                  end_date: endDate || undefined,
+                  supplier_id: supplierId || undefined,
+                  brand_id: brandId || undefined,
+                }),
+                "commandes.xlsx",
+              ).catch(() => toast.push("Export impossible.", "error"))
+            }
           >
             Exporter en Excel
-          </a>
+          </button>
           <button className="btn btn-primary" onClick={() => setCreating(true)}>
             + Nouvelle commande
           </button>
@@ -265,7 +270,13 @@ export default function OrdersPage() {
         />
       )}
 
-      {viewing && <OrderDetail id={viewing} onClose={() => setViewing(null)} />}
+      {viewing && (
+        <OrderDetail
+          id={viewing}
+          onClose={() => setViewing(null)}
+          onChanged={() => orders.reload()}
+        />
+      )}
 
       {deleting && (
         <ConfirmDialog
@@ -280,84 +291,394 @@ export default function OrdersPage() {
   );
 }
 
-// ---------- Détail commande ----------
-function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
+// ---------- Détail commande : consultation + édition des lignes + audit ----------
+function OrderDetail({
+  id,
+  onClose,
+  onChanged,
+}: {
+  id: string;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const { isAdmin } = useAuth();
   const order = useAsync(() => api.getOrder(id), [id]);
+  const impact = useAsync(
+    () =>
+      isAdmin
+        ? api.orderInventoryImpact(id)
+        : Promise.resolve({ used_by_inventory: false }),
+    [id, isAdmin],
+  );
+  const audit = useAsync(
+    () => (isAdmin ? api.orderAudit(id) : Promise.resolve([])),
+    [id, isAdmin],
+  );
+  const [editing, setEditing] = useState(false);
+
+  function reloadAll() {
+    order.reload();
+    impact.reload();
+    audit.reload();
+    onChanged();
+  }
+
+  return (
+    <>
+      <Modal
+        title={order.data ? `Commande ${order.data.order_number}` : "Commande"}
+        onClose={onClose}
+        wide
+        footer={
+          <>
+            {order.data && isAdmin && (
+              <button className="btn" onClick={() => setEditing(true)}>
+                Modifier les lignes
+              </button>
+            )}
+            <button className="btn btn-primary" onClick={onClose}>
+              Fermer
+            </button>
+          </>
+        }
+      >
+        {order.loading && <Loading />}
+        {order.error && <ErrorBox message={order.error} />}
+        {order.data && (
+          <>
+            <div
+              style={{
+                display: "flex",
+                gap: 24,
+                marginBottom: 14,
+                flexWrap: "wrap",
+              }}
+            >
+              <DetailField
+                label="Fournisseur"
+                value={order.data.supplier_name}
+              />
+              <DetailField
+                label="Date"
+                value={formatDate(order.data.order_date)}
+              />
+              <DetailField
+                label="Montant total"
+                value={formatFCFA(order.data.total_amount)}
+              />
+            </div>
+
+            {order.data.notes && (
+              <div style={{ marginBottom: 14 }}>
+                <div
+                  className="muted"
+                  style={{
+                    fontSize: 11,
+                    textTransform: "uppercase",
+                    fontWeight: 600,
+                  }}
+                >
+                  Notes
+                </div>
+                <div>{order.data.notes}</div>
+              </div>
+            )}
+
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Référence</th>
+                    <th>Désignation</th>
+                    <th className="num">Quantité</th>
+                    <th className="num">Prix unitaire</th>
+                    <th className="num">Total ligne</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {order.data.items.map((it) => (
+                    <tr key={it.id}>
+                      <td className="mono">{it.reference}</td>
+                      <td>{it.designation}</td>
+                      <td className="num">{formatNumber(it.quantity)}</td>
+                      <td className="num">{formatFCFA(it.unit_price)}</td>
+                      <td className="num">{formatFCFA(it.line_total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Historique des modifications : admin uniquement */}
+            {isAdmin && audit.data && <AuditHistory entries={audit.data} />}
+          </>
+        )}
+      </Modal>
+
+      {editing && order.data && (
+        <OrderLinesEditForm
+          order={order.data}
+          usedByInventory={impact.data?.used_by_inventory ?? false}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            reloadAll();
+            toast.push("Commande mise à jour.", "success");
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+// ---------- Formulaire d'édition des lignes d'une commande ----------
+type EditLineDraft = {
+  key: number;
+  part_id: string;
+  reference: string;
+  designation: string;
+  quantity: string;
+  unit_price: string;
+  isNew: boolean;
+};
+let editOrderLineCounter = 0;
+
+function OrderLinesEditForm({
+  order,
+  usedByInventory,
+  onClose,
+  onSaved,
+}: {
+  order: PurchaseOrder;
+  usedByInventory: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const parts = useAsync(() => api.listParts({ limit: 2000 }), []);
+  const [lines, setLines] = useState<EditLineDraft[]>(() =>
+    order.items.map((it) => ({
+      key: ++editOrderLineCounter,
+      part_id: it.part_id,
+      reference: it.reference,
+      designation: it.designation,
+      quantity: String(it.quantity),
+      unit_price: it.unit_price != null ? String(it.unit_price) : "",
+      isNew: false,
+    })),
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const total = useMemo(
+    () =>
+      lines.reduce((sum, l) => {
+        const q = Number(l.quantity) || 0;
+        const p = Number(l.unit_price) || 0;
+        return sum + q * p;
+      }, 0),
+    [lines],
+  );
+
+  function updateLine(key: number, patch: Partial<EditLineDraft>) {
+    setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  }
+
+  async function submit() {
+    setError(null);
+    const filled = lines.filter((l) => l.part_id);
+    if (filled.length === 0) {
+      setError("Une commande doit contenir au moins une ligne.");
+      return;
+    }
+    const ids = filled.map((l) => l.part_id);
+    if (new Set(ids).size !== ids.length) {
+      setError("Une même pièce ne peut apparaître qu'une seule fois.");
+      return;
+    }
+    for (const l of filled) {
+      if (!Number(l.quantity) || Number(l.quantity) <= 0) {
+        setError("Chaque ligne doit avoir une quantité supérieure à zéro.");
+        return;
+      }
+      if (l.unit_price.trim() && Number(l.unit_price) < 0) {
+        setError("Un prix ne peut pas être négatif.");
+        return;
+      }
+    }
+
+    const items: OrderLineInput[] = filled.map((l) => ({
+      part_id: l.part_id,
+      quantity: Number(l.quantity),
+      unit_price: l.unit_price.trim() ? String(Number(l.unit_price)) : null,
+    }));
+
+    setBusy(true);
+    try {
+      await api.editOrderLines(order.id, items);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : "Enregistrement impossible.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <Modal
-      title={order.data ? `Commande ${order.data.order_number}` : "Commande"}
+      title={`Modifier les lignes — ${order.order_number}`}
       onClose={onClose}
       wide
       footer={
-        <button className="btn" onClick={onClose}>
-          Fermer
-        </button>
+        <>
+          <button className="btn" onClick={onClose} disabled={busy}>
+            Annuler
+          </button>
+          <button className="btn btn-primary" onClick={submit} disabled={busy}>
+            {busy ? "Enregistrement…" : "Enregistrer"}
+          </button>
+        </>
       }
     >
-      {order.loading && <Loading />}
-      {order.error && <ErrorBox message={order.error} />}
-      {order.data && (
-        <>
-          <div
-            style={{
-              display: "flex",
-              gap: 24,
-              marginBottom: 14,
-              flexWrap: "wrap",
-            }}
-          >
-            <DetailField label="Fournisseur" value={order.data.supplier_name} />
-            <DetailField
-              label="Date"
-              value={formatDate(order.data.order_date)}
-            />
-            <DetailField
-              label="Montant total"
-              value={formatFCFA(order.data.total_amount)}
-            />
-          </div>
-          {order.data.notes && (
-            <div style={{ marginBottom: 14 }}>
-              <div
-                className="muted"
-                style={{
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                  fontWeight: 600,
-                }}
-              >
-                Notes
-              </div>
-              <div>{order.data.notes}</div>
-            </div>
-          )}
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Référence</th>
-                  <th>Désignation</th>
-                  <th className="num">Quantité</th>
-                  <th className="num">Prix unitaire</th>
-                  <th className="num">Total ligne</th>
-                </tr>
-              </thead>
-              <tbody>
-                {order.data.items.map((it) => (
-                  <tr key={it.id}>
-                    <td className="mono">{it.reference}</td>
-                    <td>{it.designation}</td>
-                    <td className="num">{formatNumber(it.quantity)}</td>
-                    <td className="num">{formatFCFA(it.unit_price)}</td>
-                    <td className="num">{formatFCFA(it.line_total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+      {error && <ErrorBox message={error} />}
+
+      {/* Avertissement inventaire */}
+      {usedByInventory && (
+        <div className="warn-banner">
+          ⚠ Cette commande a servi de base à un ou plusieurs comptages
+          d'inventaire. La modifier peut affecter des calculs de sorties déjà
+          effectués — vérifiez vos comptages concernés après enregistrement.
+        </div>
       )}
+
+      <div className="table-wrap" style={{ marginBottom: 12 }}>
+        <table className="lines-table">
+          <thead>
+            <tr>
+              <th>Pièce</th>
+              <th style={{ width: 90 }} className="num">
+                Quantité
+              </th>
+              <th style={{ width: 130 }} className="num">
+                Prix unit. (FCFA)
+              </th>
+              <th style={{ width: 110 }} className="num">
+                Total
+              </th>
+              <th style={{ width: 40 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((l) => {
+              const q = Number(l.quantity) || 0;
+              const p = Number(l.unit_price) || 0;
+              const lineTotal = q * p;
+              return (
+                <tr key={l.key}>
+                  <td>
+                    {l.isNew ? (
+                      <select
+                        className="select"
+                        value={l.part_id}
+                        onChange={(e) => {
+                          const pt = parts.data?.items.find(
+                            (x: PartDetail) => x.id === e.target.value,
+                          );
+                          updateLine(l.key, {
+                            part_id: e.target.value,
+                            reference: pt?.reference ?? "",
+                            designation: pt?.designation ?? "",
+                          });
+                        }}
+                      >
+                        <option value="">Choisir une pièce…</option>
+                        {parts.data?.items.map((pt: PartDetail) => (
+                          <option key={pt.id} value={pt.id}>
+                            {pt.reference} — {pt.designation}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span>
+                        <span className="mono">{l.reference}</span> —{" "}
+                        {l.designation}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    <input
+                      className="input num"
+                      type="number"
+                      min={1}
+                      value={l.quantity}
+                      onChange={(e) =>
+                        updateLine(l.key, { quantity: e.target.value })
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input
+                      className="input num"
+                      type="number"
+                      min={0}
+                      placeholder="—"
+                      value={l.unit_price}
+                      onChange={(e) =>
+                        updateLine(l.key, { unit_price: e.target.value })
+                      }
+                    />
+                  </td>
+                  <td className="num line-total">
+                    {lineTotal > 0 ? formatFCFA(lineTotal) : "—"}
+                  </td>
+                  <td className="num">
+                    <button
+                      className="btn-link danger"
+                      onClick={() =>
+                        setLines((ls) =>
+                          ls.length > 1
+                            ? ls.filter((x) => x.key !== l.key)
+                            : ls,
+                        )
+                      }
+                      disabled={lines.length <= 1}
+                      title="Retirer la ligne"
+                    >
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="row-flex" style={{ justifyContent: "space-between" }}>
+        <button
+          className="btn btn-sm"
+          onClick={() =>
+            setLines((ls) => [
+              ...ls,
+              {
+                key: ++editOrderLineCounter,
+                part_id: "",
+                reference: "",
+                designation: "",
+                quantity: "1",
+                unit_price: "",
+                isNew: true,
+              },
+            ])
+          }
+        >
+          + Ajouter une ligne
+        </button>
+        <div style={{ fontWeight: 600 }}>
+          Total :{" "}
+          <span style={{ color: "var(--accent)" }}>{formatFCFA(total)}</span>
+        </div>
+      </div>
     </Modal>
   );
 }
@@ -555,23 +876,13 @@ function OrderForm({
               return (
                 <tr key={l.key}>
                   <td>
-                    <select
-                      className="select"
+                    <PartCombobox
+                      parts={parts.data?.items ?? []}
                       value={l.part_id}
-                      onChange={(e) =>
-                        updateLine(l.key, { part_id: e.target.value })
+                      onChange={(partId) =>
+                        updateLine(l.key, { part_id: partId })
                       }
-                    >
-                      <option value="">Choisir une pièce…</option>
-                      {parts.data?.items.map((pt) => (
-                        <option key={pt.id} value={pt.id}>
-                          {pt.reference} — {pt.designation}
-                          {pt.is_universal
-                            ? " (Universel)"
-                            : ` (${pt.vehicle_models.map((m) => `${m.brand_name} ${m.name}`).join(", ")})`}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </td>
                   <td>
                     <input

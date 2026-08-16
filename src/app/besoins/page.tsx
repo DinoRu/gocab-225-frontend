@@ -7,7 +7,6 @@ import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import type {
   PartDetail,
-  Supplier,
   SupplyRequest,
   SupplyRequestItemInput,
   SupplyStatus,
@@ -21,6 +20,8 @@ import {
   Pagination,
   useToast,
 } from "@/components/ui";
+import { PartCombobox } from "../../components/PartCombobox";
+import { BonFromSupplyForm } from "@/components/BonFromSupplyForm";
 
 const LIMIT = 20;
 
@@ -278,6 +279,7 @@ function NeedDetail({
   const need = useAsync(() => api.getSupplyRequest(id), [id]);
   const [busy, setBusy] = useState(false);
   const [makingBc, setMakingBc] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   async function act(fn: () => Promise<unknown>, msg: string) {
     setBusy(true);
@@ -313,6 +315,15 @@ function NeedDetail({
                 disabled={busy}
               >
                 Créer un bon de commande
+              </button>
+            )}
+            {data && data.status !== "fulfilled" && (
+              <button
+                className="btn"
+                onClick={() => setEditing(true)}
+                disabled={busy}
+              >
+                Modifier
               </button>
             )}
             {isAdmin && data && data.status === "in_progress" && (
@@ -388,17 +399,40 @@ function NeedDetail({
                   <tr>
                     <th>Référence</th>
                     <th>Désignation</th>
-                    <th className="num">Quantité</th>
+                    <th className="num">Demandé</th>
+                    <th className="num">Commandé</th>
+                    <th className="num">Reste</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.items.map((it) => (
-                    <tr key={it.id}>
-                      <td className="mono">{it.reference}</td>
-                      <td>{it.designation}</td>
-                      <td className="num">{it.quantity}</td>
-                    </tr>
-                  ))}
+                  {data.items.map((it) => {
+                    const ordered = it.ordered_quantity ?? 0;
+                    const remaining = it.remaining_quantity ?? it.quantity;
+                    const fully = remaining <= 0;
+                    return (
+                      <tr key={it.id}>
+                        <td className="mono">{it.reference}</td>
+                        <td>{it.designation}</td>
+                        <td className="num">{it.quantity}</td>
+                        <td className="num" style={{ color: "var(--accent)" }}>
+                          {ordered > 0 ? (
+                            ordered
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
+                        <td
+                          className="num"
+                          style={{
+                            fontWeight: 700,
+                            color: fully ? "var(--success)" : undefined,
+                          }}
+                        >
+                          {fully ? "✓ complet" : remaining}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -446,14 +480,27 @@ function NeedDetail({
       </Modal>
 
       {makingBc && data && (
-        <CreateBcFromNeed
-          need={data}
+        <BonFromSupplyForm
+          supply={data}
           onClose={() => setMakingBc(false)}
-          onSaved={(num) => {
+          onCreated={(num) => {
             setMakingBc(false);
             need.reload();
             onChanged();
             toast.push(`Bon ${num} créé depuis le besoin.`, "success");
+          }}
+        />
+      )}
+
+      {editing && data && (
+        <NeedEditForm
+          need={data}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            need.reload();
+            onChanged();
+            toast.push("Besoin mis à jour.", "success");
           }}
         />
       )}
@@ -499,7 +546,7 @@ function NeedForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const parts = useAsync(() => api.listParts({ limit: 100 }), []);
+  const parts = useAsync(() => api.listParts({ limit: 2000 }), []);
 
   const filled = useMemo(() => lines.filter((l) => l.part_id).length, [lines]);
 
@@ -605,18 +652,12 @@ function NeedForm({
             {lines.map((l) => (
               <tr key={l.key}>
                 <td>
-                  <select
-                    className="select"
+                  <PartCombobox
+                    parts={parts.data?.items ?? []}
                     value={l.part_id}
-                    onChange={(e) => update(l.key, { part_id: e.target.value })}
-                  >
-                    <option value="">Choisir une pièce…</option>
-                    {parts.data?.items.map((pt: PartDetail) => (
-                      <option key={pt.id} value={pt.id}>
-                        {pt.reference} — {pt.designation}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(partId) => update(l.key, { part_id: partId })}
+                    placeholder="Choisir une pièce…"
+                  />
                 </td>
                 <td>
                   <input
@@ -669,105 +710,96 @@ function NeedForm({
   );
 }
 
-// ---------- Créer un bon depuis un besoin (admin, avec éclatement) ----------
-type BcLine = {
+// ---------- Édition d'un besoin (lignes consommées verrouillées) ----------
+type EditNeedLine = {
   key: number;
   part_id: string;
   reference: string;
   designation: string;
   quantity: string;
-  unit_price: string;
-  include: boolean;
+  ordered: number; // déjà commandé sur cette ligne
+  isNew: boolean;
 };
-let bcFromLineCounter = 0;
+let editNeedCounter = 0;
 
-function CreateBcFromNeed({
+function NeedEditForm({
   need,
   onClose,
   onSaved,
 }: {
   need: SupplyRequest;
   onClose: () => void;
-  onSaved: (num: string) => void;
+  onSaved: () => void;
 }) {
-  const [supplierId, setSupplierId] = useState("");
-  const [requestDate, setRequestDate] = useState(
-    new Date().toISOString().slice(0, 10),
-  );
-  const [expectedDate, setExpectedDate] = useState("");
-  // Lignes pré-remplies depuis le besoin ; "include" permet l'éclatement (ne prendre qu'une partie).
-  const [lines, setLines] = useState<BcLine[]>(() =>
+  const parts = useAsync(() => api.listParts({ limit: 1000 }), []);
+  const [notes, setNotes] = useState(need.notes ?? "");
+  const [lines, setLines] = useState<EditNeedLine[]>(() =>
     need.items.map((it) => ({
-      key: ++bcFromLineCounter,
+      key: ++editNeedCounter,
       part_id: it.part_id,
       reference: it.reference,
       designation: it.designation,
       quantity: String(it.quantity),
-      unit_price: "",
-      include: true,
+      ordered: it.ordered_quantity ?? 0,
+      isNew: false,
     })),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const suppliers = useAsync(() => api.listSuppliers(), []);
-
-  function update(key: number, patch: Partial<BcLine>) {
+  function update(key: number, patch: Partial<EditNeedLine>) {
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   }
 
   async function submit() {
     setError(null);
-    if (!supplierId) {
-      setError("Choisissez un fournisseur.");
+    const kept = lines.filter((l) => l.part_id);
+    if (kept.length === 0) {
+      setError("Un besoin doit contenir au moins une pièce.");
       return;
     }
-    const kept = lines.filter((l) => l.include);
-    if (kept.length === 0) {
-      setError("Sélectionnez au moins une ligne à commander.");
+    const ids = kept.map((l) => l.part_id);
+    if (new Set(ids).size !== ids.length) {
+      setError("Une même pièce ne peut apparaître qu'une seule fois.");
       return;
     }
     for (const l of kept) {
       const q = Number(l.quantity);
       if (!Number.isInteger(q) || q <= 0) {
-        setError(`Quantité invalide pour ${l.reference}.`);
+        setError(`Quantité invalide pour « ${l.reference || "?"} ».`);
         return;
       }
-      if (
-        l.unit_price !== "" &&
-        (Number.isNaN(Number(l.unit_price)) || Number(l.unit_price) < 0)
-      ) {
-        setError(`Prix invalide pour ${l.reference}.`);
+      // Garde-fou client : pas sous le commandé (le backend revérifie).
+      if (l.ordered > 0 && q < l.ordered) {
+        setError(
+          `« ${l.reference} » a déjà ${l.ordered} en commande : la quantité ne peut pas être inférieure.`,
+        );
         return;
       }
     }
 
+    const items: SupplyRequestItemInput[] = kept.map((l) => ({
+      part_id: l.part_id,
+      quantity: Number(l.quantity),
+    }));
+
     setBusy(true);
     try {
-      const created = await api.createBcFromSupply({
-        supply_request_id: need.id,
-        supplier_id: supplierId,
-        request_date: requestDate,
-        expected_date: expectedDate || null,
-        items: kept.map((l) => ({
-          part_id: l.part_id,
-          quantity: Number(l.quantity),
-          unit_price: l.unit_price === "" ? null : String(Number(l.unit_price)),
-        })),
+      await api.updateSupplyRequest(need.id, {
+        notes: notes.trim() || null,
+        items,
       });
-      onSaved(created.bc_number);
+      onSaved();
     } catch (e) {
-      setError(e instanceof ApiError ? e.detail : "Création impossible.");
+      setError(e instanceof ApiError ? e.detail : "Enregistrement impossible.");
     } finally {
       setBusy(false);
     }
   }
 
-  const includedCount = lines.filter((l) => l.include).length;
-
   return (
     <Modal
-      title={`Bon de commande depuis ${need.sr_number}`}
+      title={`Modifier ${need.sr_number}`}
       onClose={onClose}
       wide
       footer={
@@ -776,123 +808,140 @@ function CreateBcFromNeed({
             Annuler
           </button>
           <button className="btn btn-primary" onClick={submit} disabled={busy}>
-            {busy ? "Création…" : "Créer le bon"}
+            {busy ? "Enregistrement…" : "Enregistrer"}
           </button>
         </>
       }
     >
       {error && <ErrorBox message={error} />}
-      <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
-        Décochez les lignes que vous ne commandez pas chez ce fournisseur : vous
-        pourrez créer un autre bon pour le reste (éclatement du besoin).
-      </p>
 
-      <div
-        className="form-grid"
-        style={{ gridTemplateColumns: "2fr 1fr 1fr", marginBottom: 16 }}
-      >
-        <div className="field">
-          <label>
-            Fournisseur <span className="required">*</span>
-          </label>
-          <select
-            className="select"
-            value={supplierId}
-            onChange={(e) => setSupplierId(e.target.value)}
-          >
-            <option value="">Choisir…</option>
-            {suppliers.data?.items.map((s: Supplier) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label>Date du bon</label>
-          <input
-            className="input"
-            type="date"
-            value={requestDate}
-            onChange={(e) => setRequestDate(e.target.value)}
-          />
-        </div>
-        <div className="field">
-          <label>Livraison souhaitée</label>
-          <input
-            className="input"
-            type="date"
-            value={expectedDate}
-            onChange={(e) => setExpectedDate(e.target.value)}
-          />
-        </div>
+      <div className="field" style={{ marginBottom: 12 }}>
+        <label>Notes</label>
+        <input
+          className="input"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+        />
       </div>
 
-      <div className="table-wrap">
+      <div className="table-wrap" style={{ marginBottom: 12 }}>
         <table className="lines-table">
           <thead>
             <tr>
-              <th style={{ width: 34 }}></th>
               <th>Pièce</th>
-              <th style={{ width: 110 }} className="num">
+              <th className="num" style={{ width: 90 }}>
+                Commandé
+              </th>
+              <th className="num" style={{ width: 120 }}>
                 Quantité
               </th>
-              <th style={{ width: 140 }} className="num">
-                Prix unit. (opt.)
-              </th>
+              <th style={{ width: 40 }}></th>
             </tr>
           </thead>
           <tbody>
-            {lines.map((l) => (
-              <tr
-                key={l.key}
-                style={!l.include ? { opacity: 0.45 } : undefined}
-              >
-                <td className="num">
-                  <input
-                    type="checkbox"
-                    checked={l.include}
-                    onChange={(e) =>
-                      update(l.key, { include: e.target.checked })
-                    }
-                  />
-                </td>
-                <td>
-                  <span className="mono">{l.reference}</span> — {l.designation}
-                </td>
-                <td>
-                  <input
-                    className="input num"
-                    type="number"
-                    min={1}
-                    value={l.quantity}
-                    disabled={!l.include}
-                    onChange={(e) =>
-                      update(l.key, { quantity: e.target.value })
-                    }
-                  />
-                </td>
-                <td>
-                  <input
-                    className="input num"
-                    type="number"
-                    min={0}
-                    value={l.unit_price}
-                    disabled={!l.include}
-                    placeholder="—"
-                    onChange={(e) =>
-                      update(l.key, { unit_price: e.target.value })
-                    }
-                  />
-                </td>
-              </tr>
-            ))}
+            {lines.map((l) => {
+              const canRemove = l.ordered === 0; // seules les lignes non commandées peuvent partir
+              return (
+                <tr key={l.key}>
+                  <td>
+                    {l.isNew ? (
+                      <PartCombobox
+                        parts={parts.data?.items ?? []}
+                        value={l.part_id}
+                        onChange={(partId) => {
+                          const pt = parts.data?.items.find(
+                            (p: PartDetail) => p.id === partId,
+                          );
+                          update(l.key, {
+                            part_id: partId,
+                            reference: pt?.reference ?? "",
+                            designation: pt?.designation ?? "",
+                          });
+                        }}
+                        placeholder="Choisir une pièce…"
+                      />
+                    ) : (
+                      <span>
+                        <span className="mono">{l.reference}</span> —{" "}
+                        {l.designation}
+                      </span>
+                    )}
+                  </td>
+                  <td
+                    className="num"
+                    style={{
+                      color:
+                        l.ordered > 0 ? "var(--accent)" : "var(--text-muted)",
+                    }}
+                  >
+                    {l.ordered > 0 ? l.ordered : "—"}
+                  </td>
+                  <td className="num">
+                    <input
+                      className="input num"
+                      type="number"
+                      min={Math.max(1, l.ordered)}
+                      value={l.quantity}
+                      onChange={(e) =>
+                        update(l.key, { quantity: e.target.value })
+                      }
+                      title={
+                        l.ordered > 0
+                          ? `Déjà ${l.ordered} en commande : minimum ${l.ordered}`
+                          : undefined
+                      }
+                    />
+                  </td>
+                  <td className="num">
+                    <button
+                      className="btn-link danger"
+                      onClick={() =>
+                        setLines((ls) =>
+                          ls.length > 1
+                            ? ls.filter((x) => x.key !== l.key)
+                            : ls,
+                        )
+                      }
+                      disabled={!canRemove || lines.length <= 1}
+                      title={
+                        canRemove
+                          ? "Retirer"
+                          : "Ligne déjà commandée, non supprimable"
+                      }
+                    >
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
-      <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-        {includedCount} ligne(s) sur ce bon.
+      <button
+        className="btn btn-sm"
+        onClick={() =>
+          setLines((ls) => [
+            ...ls,
+            {
+              key: ++editNeedCounter,
+              part_id: "",
+              reference: "",
+              designation: "",
+              quantity: "1",
+              ordered: 0,
+              isNew: true,
+            },
+          ])
+        }
+      >
+        + Ajouter une pièce
+      </button>
+
+      <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
+        Les lignes déjà commandées ne peuvent être ni supprimées, ni descendues
+        sous la quantité commandée.
       </p>
     </Modal>
   );

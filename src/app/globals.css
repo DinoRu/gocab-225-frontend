@@ -1212,3 +1212,103 @@ tfoot td {
     display: none;
   }
 }
+
+/* ---------- Bandeau d'avertissement ---------- */
+.warn-banner {
+  background: var(--warning-soft);
+  color: #b7791f;
+  border: 1px solid #f0d9a8;
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+/* ---------- Historique des modifications (audit) ---------- */
+.audit-box {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-top: 16px;
+}
+
+
+.audit-head {
+  padding: 10px 14px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.audit-toggle { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+.audit-entry { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.audit-entry:last-child { border-bottom: none; }
+.audit-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.audit-user { font-size: 12px; font-weight: 600; color: var(--text); }
+.audit-date { font-size: 11px; color: var(--text-faint); }
+.audit-changes { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--text-muted); line-height: 1.7; }
+.audit-add { color: var(--success); }
+.audit-del { color: var(--danger); }
+.audit-empty { padding: 14px; font-size: 12.5px; color: var(--text-muted); }
+
+
+/* ---------- Combobox pièces ---------- */
+.combo {
+  position: relative;
+  width: 100%;
+}
+.combo-input {
+  width: 100%;
+}
+
+/* Panneau : position/coordonnées gérées en inline (portail dans le body) */
+.combo-panel {
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 9999;
+}
+.combo-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.combo-option:last-child {
+  border-bottom: none;
+}
+.combo-option.highlight {
+  background: var(--row-hover);
+}
+.combo-option.selected {
+  background: var(--accent-soft);
+}
+.combo-ref {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+.combo-desig {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+.combo-empty {
+  padding: 14px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-align: center;
+}

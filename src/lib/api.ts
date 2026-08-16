@@ -38,6 +38,10 @@ import type {
   SupplyRequestCreateInput,
   SupplyStatus,
   BcFromSupplyInput,
+  InventoryEditImpact,
+  AuditEntry,
+  OrderLineInput,
+  OrderInventoryImpact,
 } from "./types";
 
 const BASE_URL =
@@ -45,20 +49,27 @@ const BASE_URL =
   "/api/v1";
 
 
-  // --- Gestion du token JWT ---
-const TOKEN_KEY = "gocab_token";
+const ACCESS_KEY = "gocab_token";
+const REFRESH_KEY = "gocab_refresh";
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
+  return localStorage.getItem(ACCESS_KEY);
 }
-
-export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+export function getRefreshToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(REFRESH_KEY);
 }
-
+export function setTokens(access: string, refresh: string): void {
+  localStorage.setItem(ACCESS_KEY, access);
+  localStorage.setItem(REFRESH_KEY, refresh);
+}
+export function setAccessToken(access: string): void {
+  localStorage.setItem(ACCESS_KEY, access);
+}
 export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(ACCESS_KEY);
+  localStorage.removeItem(REFRESH_KEY);
 }
 
 // Callback appelé quand le backend renvoie 401 (token absent/expiré/invalide).
@@ -93,25 +104,51 @@ function buildUrl(path: string, query?: Query): string {
   return url.toString();
 }
 
+// Un seul refresh à la fois : les requêtes qui tombent en 401 pendant
+// un refresh en cours attendent le même résultat au lieu d'en lancer chacune un.
+let refreshPromise: Promise<string | null> | null = null;
+
+async function doRefresh(): Promise<string | null> {
+  const refresh = getRefreshToken();
+  if (!refresh) return null;
+  try {
+    const res = await fetch(buildUrl("/auth/refresh"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    setTokens(data.access_token, data.refresh_token); // rotation : on stocke le nouveau couple
+    return data.access_token as string;
+  } catch {
+    return null;
+  }
+}
+
+// Garantit qu'un seul refresh réseau tourne à la fois.
+function refreshAccess(): Promise<string | null> {
+  if (!refreshPromise) {
+    refreshPromise = doRefresh().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
+
 async function request<T>(
   method: string,
   path: string,
-  opts: { query?: Query; body?: unknown } = {}
+  opts: { query?: Query; body?: unknown } = {},
+  _retry = false
 ): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const token = getToken();
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const init: RequestInit = {
-    method,
-    headers,
-    cache: "no-store",
-  };
-  if (opts.body !== undefined) {
-    init.body = JSON.stringify(opts.body);
-  }
+  const init: RequestInit = { method, headers, cache: "no-store" };
+  if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
 
   let res: Response;
   try {
@@ -120,27 +157,34 @@ async function request<T>(
     throw new ApiError(0, "Impossible de joindre l'API. Vérifiez qu'elle est démarrée.");
   }
 
-  // Session expirée ou token invalide → déconnexion globale.
-  if (res.status === 401) {
+  // 401 → on tente UN refresh puis on rejoue la requête une seule fois.
+  if (res.status === 401 && !_retry) {
+    const newAccess = await refreshAccess();
+    if (newAccess) {
+      return request<T>(method, path, opts, true); // rejoue avec le nouveau token
+    }
+    // Refresh échoué → vraie déconnexion.
+    clearToken();
+    if (onUnauthorized) onUnauthorized();
+    throw new ApiError(401, "Session expirée. Veuillez vous reconnecter.");
+  }
+  if (res.status === 401 && _retry) {
+    // Même après refresh, toujours 401 → on abandonne.
     clearToken();
     if (onUnauthorized) onUnauthorized();
     throw new ApiError(401, "Session expirée. Veuillez vous reconnecter.");
   }
 
-  if (res.status === 204) {
-    return undefined as T;
-  }
+  if (res.status === 204) return undefined as T;
 
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
-
   if (!res.ok) {
     const detail =
       (data && typeof data === "object" && "detail" in data && String(data.detail)) ||
       `Erreur ${res.status}`;
     throw new ApiError(res.status, detail);
   }
-
   return data as T;
 }
 
@@ -148,7 +192,12 @@ async function request<T>(
 // (atomique échoué). Dans les trois cas le corps est une BulkResult exploitable :
 // on la retourne telle quelle. Seuls un 422 SANS enveloppe (erreur de validation
 // Pydantic classique, ex. batch vide) ou une panne réseau lèvent une ApiError.
-async function bulkRequest<T>(method: string, path: string, body: unknown): Promise<T> {
+async function bulkRequest<T>(
+  method: string,
+  path: string,
+  body: unknown,
+  _retry = false
+): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const token = getToken();
   if (token) {
@@ -167,8 +216,17 @@ async function bulkRequest<T>(method: string, path: string, body: unknown): Prom
     throw new ApiError(0, "Impossible de joindre l'API. Vérifiez qu'elle est démarrée.");
   }
 
-  // 401 → déconnexion globale (comme dans request).
-  if (res.status === 401) {
+  // 401 → on tente UN refresh puis on rejoue, comme dans request.
+  if (res.status === 401 && !_retry) {
+    const newAccess = await refreshAccess();
+    if (newAccess) {
+      return bulkRequest<T>(method, path, body, true);
+    }
+    clearToken();
+    if (onUnauthorized) onUnauthorized();
+    throw new ApiError(401, "Session expirée. Veuillez vous reconnecter.");
+  }
+  if (res.status === 401 && _retry) {
     clearToken();
     if (onUnauthorized) onUnauthorized();
     throw new ApiError(401, "Session expirée. Veuillez vous reconnecter.");
@@ -460,7 +518,7 @@ export const api = {
 
 
   // ---- Authentification ----
-  async login(username: string, password: string): Promise<{ access_token: string }> {
+  async login(username: string, password: string): Promise<{ access_token: string; refresh_token: string }> {
     const body = new URLSearchParams();
     body.set("username", username);
     body.set("password", password);
@@ -480,9 +538,27 @@ export const api = {
     }
     return data;
   },
+
+
   me(): Promise<CurrentUser> {
     return request<CurrentUser>("GET", "/auth/me");
   },
+
+  async logout(): Promise<void> {
+    const refresh = getRefreshToken();
+    if (refresh) {
+      try {
+        await fetch(buildUrl("/auth/logout"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refresh }),
+        });
+      } catch {
+        /* on ignore : on nettoie côté client de toute façon */
+      }
+    }
+  },
+
 
   // ---- Utilisateurs (admin) ----
   listUsers(query: {
@@ -547,9 +623,31 @@ export const api = {
   supplyExportUrl(query: { status?: SupplyStatus } = {}): string {
     return buildUrl("/supply-requests/export", query);
   },
+  
   // Créer un bon de commande depuis un besoin (admin, permet l'éclatement)
   createBcFromSupply(body: BcFromSupplyInput): Promise<PurchaseRequest> {
     return request<PurchaseRequest>("POST", "/purchase-requests/from-supply", { body });
+  },
+
+  // ---- Édition inventaire ----
+  inventoryEditImpact(id: string): Promise<InventoryEditImpact> {
+    return request<InventoryEditImpact>("GET", `/inventory/counts/${id}/edit-impact`);
+  },
+  inventoryCountAudit(id: string): Promise<AuditEntry[]> {
+    return request<AuditEntry[]>("GET", `/inventory/counts/${id}/audit`);
+  },
+
+  // ---- Édition commande ----
+  editOrderLines(id: string, items: OrderLineInput[]): Promise<PurchaseOrder> {
+    return request<PurchaseOrder>("PATCH", `/purchase-orders/${id}/lines`, {
+      body: { items },
+    });
+  },
+  orderAudit(id: string): Promise<AuditEntry[]> {
+    return request<AuditEntry[]>("GET", `/purchase-orders/${id}/audit`);
+  },
+  orderInventoryImpact(id: string): Promise<OrderInventoryImpact> {
+    return request<OrderInventoryImpact>("GET", `/purchase-orders/${id}/inventory-impact`);
   },
 
 };
@@ -557,7 +655,9 @@ export const api = {
 
 // Télécharge un fichier protégé en envoyant le token, puis déclenche le download.
 // Remplace les <a href> directs qui ne passent pas l'Authorization header.
-export async function downloadWithAuth(url: string, filename: string): Promise<void> {
+// Télécharge un fichier protégé en envoyant le token, puis déclenche le download.
+// Remplace les <a href> directs qui ne passent pas l'Authorization header.
+export async function downloadWithAuth(url: string, filename: string, _retry = false): Promise<void> {
   const token = getToken();
   let res: Response;
   try {
@@ -567,6 +667,17 @@ export async function downloadWithAuth(url: string, filename: string): Promise<v
   } catch {
     throw new ApiError(0, "Téléchargement impossible.");
   }
+
+  // 401 → on tente UN refresh puis on rejoue une fois.
+  if (res.status === 401 && !_retry) {
+    const newAccess = await refreshAccess();
+    if (newAccess) {
+      return downloadWithAuth(url, filename, true);
+    }
+    clearToken();
+    if (onUnauthorized) onUnauthorized();
+    throw new ApiError(401, "Téléchargement impossible.");
+  }
   if (!res.ok) {
     if (res.status === 401) {
       clearToken();
@@ -574,6 +685,7 @@ export async function downloadWithAuth(url: string, filename: string): Promise<v
     }
     throw new ApiError(res.status, "Téléchargement impossible.");
   }
+
   const blob = await res.blob();
   const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");

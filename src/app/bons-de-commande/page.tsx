@@ -10,6 +10,7 @@ import type {
   PurchaseRequestItemInput,
   PartDetail,
   Supplier,
+  SupplyRequest,
 } from "@/lib/types";
 import {
   ConfirmDialog,
@@ -20,6 +21,8 @@ import {
   Pagination,
   useToast,
 } from "@/components/ui";
+import { PartCombobox } from "../../components/PartCombobox";
+import { BonFromSupplyForm } from "@/components/BonFromSupplyForm";
 
 const LIMIT = 20;
 
@@ -44,10 +47,11 @@ export default function PurchaseRequestsPage() {
   const [page, setPage] = useState(1);
 
   const [creating, setCreating] = useState(false);
+  const [pickingNeed, setPickingNeed] = useState(false);
+  const [fromNeed, setFromNeed] = useState<SupplyRequest | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<PurchaseRequest | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
-  const [actionBusy, setActionBusy] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -69,27 +73,6 @@ export default function PurchaseRequestsPage() {
       }),
     [debounced, status, supplierId, page],
   );
-
-  async function doAction(id: string, action: "send" | "reopen") {
-    setActionBusy(id);
-    try {
-      if (action === "send") {
-        await api.sendPurchaseRequest(id);
-        toast.push("Bon marqué comme envoyé.", "success");
-      } else {
-        await api.reopenPurchaseRequest(id);
-        toast.push("Bon rouvert en brouillon.", "success");
-      }
-      bcs.reload();
-    } catch (e) {
-      toast.push(
-        e instanceof ApiError ? e.detail : "Action impossible.",
-        "error",
-      );
-    } finally {
-      setActionBusy(null);
-    }
-  }
 
   async function confirmDelete() {
     if (!deleting) return;
@@ -118,9 +101,14 @@ export default function PurchaseRequestsPage() {
             Demandes d'approvisionnement à envoyer aux fournisseurs
           </div>
         </div>
-        <button className="btn btn-primary" onClick={() => setCreating(true)}>
-          + Nouveau bon
-        </button>
+        <div className="row-flex">
+          <button className="btn" onClick={() => setPickingNeed(true)}>
+            Depuis un besoin
+          </button>
+          <button className="btn btn-primary" onClick={() => setCreating(true)}>
+            + Nouveau bon
+          </button>
+        </div>
       </div>
 
       <div className="toolbar">
@@ -290,6 +278,28 @@ export default function PurchaseRequestsPage() {
         />
       )}
 
+      {pickingNeed && (
+        <PickNeedModal
+          onClose={() => setPickingNeed(false)}
+          onPick={(need) => {
+            setPickingNeed(false);
+            setFromNeed(need);
+          }}
+        />
+      )}
+
+      {fromNeed && (
+        <BonFromSupplyForm
+          supply={fromNeed}
+          onClose={() => setFromNeed(null)}
+          onCreated={(num) => {
+            setFromNeed(null);
+            bcs.reload();
+            toast.push(`Bon ${num} créé depuis le besoin.`, "success");
+          }}
+        />
+      )}
+
       {viewing && (
         <BcDetail
           id={viewing}
@@ -324,6 +334,7 @@ function BcDetail({
   const toast = useToast();
   const bc = useAsync(() => api.getPurchaseRequest(id), [id]);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   async function act(fn: () => Promise<unknown>, msg: string) {
     setBusy(true);
@@ -343,192 +354,230 @@ function BcDetail({
   }
 
   const data = bc.data;
+  // Un bon issu d'un besoin : on n'édite pas ses lignes ici (cohérence de la
+  // consommation du besoin). On le modifie via le besoin d'origine.
+  const fromNeed = !!data?.supply_request_id;
 
   return (
-    <Modal
-      title={data ? `Bon ${data.bc_number}` : "Bon de commande"}
-      onClose={onClose}
-      wide
-      footer={
-        <>
-          {data && (
-            <>
-              <button
-                className="btn"
-                onClick={() =>
-                  downloadWithAuth(
-                    api.bcPdfUrl(data.id),
-                    `bon_commande_${data.bc_number}.pdf`,
-                  ).catch(() =>
-                    toast.push("Téléchargement impossible.", "error"),
-                  )
-                }
-              >
-                PDF
-              </button>
-              <button
-                className="btn"
-                onClick={() =>
-                  downloadWithAuth(
-                    api.bcExcelUrl(data.id),
-                    `bon_commande_${data.bc_number}.xlsx`,
-                  ).catch(() =>
-                    toast.push("Téléchargement impossible.", "error"),
-                  )
-                }
-              >
-                Excel
-              </button>
-              {data.status === "draft" && (
-                <button
-                  className="btn btn-primary"
-                  disabled={busy}
-                  onClick={() =>
-                    act(() => api.sendPurchaseRequest(data.id), "Bon envoyé.")
-                  }
-                >
-                  Marquer envoyé
-                </button>
-              )}
-              {data.status === "sent" && (
-                <button
-                  className="btn btn-primary"
-                  disabled={busy}
-                  onClick={() =>
-                    act(() => api.receivePurchaseRequest(data.id), "Bon reçu.")
-                  }
-                >
-                  Marquer reçu
-                </button>
-              )}
-              {data.status !== "draft" && (
+    <>
+      <Modal
+        title={data ? `Bon ${data.bc_number}` : "Bon de commande"}
+        onClose={onClose}
+        wide
+        footer={
+          <>
+            {data && (
+              <>
                 <button
                   className="btn"
-                  disabled={busy}
                   onClick={() =>
-                    act(
-                      () => api.reopenPurchaseRequest(data.id),
-                      "Bon rouvert.",
+                    downloadWithAuth(
+                      api.bcPdfUrl(data.id),
+                      `bon_commande_${data.bc_number}.pdf`,
+                    ).catch(() =>
+                      toast.push("Téléchargement impossible.", "error"),
                     )
                   }
                 >
-                  Rouvrir
+                  PDF
                 </button>
-              )}
-            </>
-          )}
-          <button className="btn" onClick={onClose}>
-            Fermer
-          </button>
-        </>
-      }
-    >
-      {bc.loading && <Loading />}
-      {bc.error && <ErrorBox message={bc.error} />}
-      {data && (
-        <>
-          <div
-            style={{
-              display: "flex",
-              gap: 24,
-              marginBottom: 14,
-              flexWrap: "wrap",
-            }}
-          >
-            <DetailField label="Fournisseur" value={data.supplier.name} />
-            <DetailField
-              label="Date du bon"
-              value={formatDate(data.request_date)}
-            />
-            {data.expected_date && (
+                <button
+                  className="btn"
+                  onClick={() =>
+                    downloadWithAuth(
+                      api.bcExcelUrl(data.id),
+                      `bon_commande_${data.bc_number}.xlsx`,
+                    ).catch(() =>
+                      toast.push("Téléchargement impossible.", "error"),
+                    )
+                  }
+                >
+                  Excel
+                </button>
+                {data.status === "draft" && !fromNeed && (
+                  <button
+                    className="btn"
+                    disabled={busy}
+                    onClick={() => setEditing(true)}
+                  >
+                    Modifier les lignes
+                  </button>
+                )}
+                {data.status === "draft" && (
+                  <button
+                    className="btn btn-primary"
+                    disabled={busy}
+                    onClick={() =>
+                      act(() => api.sendPurchaseRequest(data.id), "Bon envoyé.")
+                    }
+                  >
+                    Marquer envoyé
+                  </button>
+                )}
+                {data.status === "sent" && (
+                  <button
+                    className="btn btn-primary"
+                    disabled={busy}
+                    onClick={() =>
+                      act(
+                        () => api.receivePurchaseRequest(data.id),
+                        "Bon reçu.",
+                      )
+                    }
+                  >
+                    Marquer reçu
+                  </button>
+                )}
+                {data.status !== "draft" && (
+                  <button
+                    className="btn"
+                    disabled={busy}
+                    onClick={() =>
+                      act(
+                        () => api.reopenPurchaseRequest(data.id),
+                        "Bon rouvert.",
+                      )
+                    }
+                  >
+                    Rouvrir
+                  </button>
+                )}
+              </>
+            )}
+            <button className="btn" onClick={onClose}>
+              Fermer
+            </button>
+          </>
+        }
+      >
+        {bc.loading && <Loading />}
+        {bc.error && <ErrorBox message={bc.error} />}
+        {data && (
+          <>
+            <div
+              style={{
+                display: "flex",
+                gap: 24,
+                marginBottom: 14,
+                flexWrap: "wrap",
+              }}
+            >
+              <DetailField label="Fournisseur" value={data.supplier.name} />
               <DetailField
-                label="Livraison souhaitée"
-                value={formatDate(data.expected_date)}
+                label="Date du bon"
+                value={formatDate(data.request_date)}
               />
-            )}
-            <div>
-              <div
-                className="muted"
-                style={{
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                  fontWeight: 600,
-                }}
-              >
-                Statut
-              </div>
-              <span
-                className={"bc-badge " + STATUS_CLASS[data.status]}
-                style={{ marginTop: 2 }}
-              >
-                {STATUS_LABEL[data.status]}
-              </span>
-            </div>
-            {data.order_number && (
-              <DetailField label="Commande liée" value={data.order_number} />
-            )}
-          </div>
-
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Référence</th>
-                  <th>Désignation</th>
-                  <th className="num">Quantité</th>
-                  <th className="num">Prix unitaire</th>
-                  <th className="num">Montant</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.map((it) => (
-                  <tr key={it.id}>
-                    <td className="mono">{it.reference}</td>
-                    <td>{it.designation}</td>
-                    <td className="num">{it.quantity}</td>
-                    <td className="num">
-                      {it.unit_price === null ? (
-                        <span className="muted">—</span>
-                      ) : (
-                        formatFCFA(it.unit_price)
-                      )}
-                    </td>
-                    <td className="num">
-                      {it.line_total === null ? (
-                        <span className="muted">—</span>
-                      ) : (
-                        formatFCFA(it.line_total)
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              {data.total_amount !== null && (
-                <tfoot>
-                  <tr style={{ background: "var(--bg)", fontWeight: 700 }}>
-                    <td
-                      colSpan={4}
-                      style={{ textAlign: "right", padding: "8px 12px" }}
-                    >
-                      TOTAL
-                    </td>
-                    <td className="num" style={{ padding: "8px 12px" }}>
-                      {formatFCFA(data.total_amount)}
-                    </td>
-                  </tr>
-                </tfoot>
+              {data.expected_date && (
+                <DetailField
+                  label="Livraison souhaitée"
+                  value={formatDate(data.expected_date)}
+                />
               )}
-            </table>
-          </div>
+              <div>
+                <div
+                  className="muted"
+                  style={{
+                    fontSize: 11,
+                    textTransform: "uppercase",
+                    fontWeight: 600,
+                  }}
+                >
+                  Statut
+                </div>
+                <span
+                  className={"bc-badge " + STATUS_CLASS[data.status]}
+                  style={{ marginTop: 2 }}
+                >
+                  {STATUS_LABEL[data.status]}
+                </span>
+              </div>
+              {data.order_number && (
+                <DetailField label="Commande liée" value={data.order_number} />
+              )}
+            </div>
 
-          {data.notes && (
-            <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
-              <strong>Notes :</strong> {data.notes}
-            </p>
-          )}
-        </>
+            {fromNeed && data.status === "draft" && (
+              <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+                Ce bon a été généré depuis un besoin. Pour ajuster ses lignes,
+                supprimez-le et recréez-le depuis le besoin (cela préserve le
+                suivi du reste à commander).
+              </p>
+            )}
+
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Référence</th>
+                    <th>Désignation</th>
+                    <th className="num">Quantité</th>
+                    <th className="num">Prix unitaire</th>
+                    <th className="num">Montant</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.items.map((it) => (
+                    <tr key={it.id}>
+                      <td className="mono">{it.reference}</td>
+                      <td>{it.designation}</td>
+                      <td className="num">{it.quantity}</td>
+                      <td className="num">
+                        {it.unit_price === null ? (
+                          <span className="muted">—</span>
+                        ) : (
+                          formatFCFA(it.unit_price)
+                        )}
+                      </td>
+                      <td className="num">
+                        {it.line_total === null ? (
+                          <span className="muted">—</span>
+                        ) : (
+                          formatFCFA(it.line_total)
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {data.total_amount !== null && (
+                  <tfoot>
+                    <tr style={{ background: "var(--bg)", fontWeight: 700 }}>
+                      <td
+                        colSpan={4}
+                        style={{ textAlign: "right", padding: "8px 12px" }}
+                      >
+                        TOTAL
+                      </td>
+                      <td className="num" style={{ padding: "8px 12px" }}>
+                        {formatFCFA(data.total_amount)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+
+            {data.notes && (
+              <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
+                <strong>Notes :</strong> {data.notes}
+              </p>
+            )}
+          </>
+        )}
+      </Modal>
+
+      {editing && data && (
+        <BcLinesEditForm
+          bc={data}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            bc.reload();
+            onChanged();
+            toast.push("Bon mis à jour.", "success");
+          }}
+        />
       )}
-    </Modal>
+    </>
   );
 }
 
@@ -543,6 +592,100 @@ function DetailField({ label, value }: { label: string; value: string }) {
       </div>
       <div style={{ fontSize: 14, fontWeight: 500, marginTop: 2 }}>{value}</div>
     </div>
+  );
+}
+
+// ---------- Choisir un besoin source pour créer un bon ----------
+function PickNeedModal({
+  onClose,
+  onPick,
+}: {
+  onClose: () => void;
+  onPick: (need: SupplyRequest) => void;
+}) {
+  const toast = useToast();
+  // On ne propose que les besoins encore ouverts ou en cours (pas les traités).
+  const openNeeds = useAsync(
+    () => api.listSupplyRequests({ status: "open", limit: 50 }),
+    [],
+  );
+  const inProgress = useAsync(
+    () => api.listSupplyRequests({ status: "in_progress", limit: 50 }),
+    [],
+  );
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+
+  const rows = [
+    ...(openNeeds.data?.items ?? []),
+    ...(inProgress.data?.items ?? []),
+  ];
+
+  async function choose(id: string) {
+    setLoadingId(id);
+    try {
+      const full = await api.getSupplyRequest(id); // détail avec reste par ligne
+      onPick(full);
+    } catch (e) {
+      toast.push(
+        e instanceof ApiError ? e.detail : "Chargement impossible.",
+        "error",
+      );
+    } finally {
+      setLoadingId(null);
+    }
+  }
+
+  const loading = openNeeds.loading || inProgress.loading;
+
+  return (
+    <Modal
+      title="Choisir un besoin"
+      onClose={onClose}
+      footer={
+        <button className="btn" onClick={onClose}>
+          Annuler
+        </button>
+      }
+    >
+      {loading && <Loading />}
+      {rows.length === 0 && !loading ? (
+        <EmptyState
+          message="Aucun besoin à traiter"
+          hint="Tous les besoins sont soit traités, soit inexistants."
+        />
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>N° besoin</th>
+                <th>Date</th>
+                <th className="num">Pièces</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((n) => (
+                <tr key={n.id}>
+                  <td className="mono">{n.sr_number}</td>
+                  <td>{formatDate(n.request_date)}</td>
+                  <td className="num">{n.items.length}</td>
+                  <td className="num">
+                    <button
+                      className="btn-link"
+                      disabled={loadingId === n.id}
+                      onClick={() => choose(n.id)}
+                    >
+                      {loadingId === n.id ? "…" : "Choisir"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -578,7 +721,7 @@ function BcForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const parts = useAsync(() => api.listParts({ limit: 100 }), []);
+  const parts = useAsync(() => api.listParts({ limit: 2000 }), []);
 
   function updateLine(key: number, patch: Partial<BcLine>) {
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -725,20 +868,14 @@ function BcForm({
             {lines.map((l) => (
               <tr key={l.key}>
                 <td>
-                  <select
-                    className="select"
+                  <PartCombobox
+                    parts={parts.data?.items ?? []}
                     value={l.part_id}
-                    onChange={(e) =>
-                      updateLine(l.key, { part_id: e.target.value })
+                    onChange={(partId) =>
+                      updateLine(l.key, { part_id: partId })
                     }
-                  >
-                    <option value="">Choisir une pièce…</option>
-                    {parts.data?.items.map((pt: PartDetail) => (
-                      <option key={pt.id} value={pt.id}>
-                        {pt.reference} — {pt.designation}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Choisir une pièce…"
+                  />
                 </td>
                 <td>
                   <input
@@ -806,6 +943,241 @@ function BcForm({
         Le prix unitaire est facultatif. Le total ne s'affiche que si au moins
         un prix est renseigné.
       </p>
+    </Modal>
+  );
+}
+
+// ---------- Édition des lignes d'un bon (brouillon uniquement) ----------
+type BcEditLine = {
+  key: number;
+  part_id: string;
+  reference: string;
+  designation: string;
+  quantity: string;
+  unit_price: string;
+  isNew: boolean;
+};
+let bcEditCounter = 0;
+
+function BcLinesEditForm({
+  bc,
+  onClose,
+  onSaved,
+}: {
+  bc: PurchaseRequest;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const parts = useAsync(() => api.listParts({ limit: 1000 }), []);
+  const [lines, setLines] = useState<BcEditLine[]>(() =>
+    bc.items.map((it) => ({
+      key: ++bcEditCounter,
+      part_id: it.part_id,
+      reference: it.reference,
+      designation: it.designation,
+      quantity: String(it.quantity),
+      unit_price: it.unit_price != null ? String(it.unit_price) : "",
+      isNew: false,
+    })),
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const total = useMemo(
+    () =>
+      lines.reduce((sum, l) => {
+        const q = Number(l.quantity) || 0;
+        const p = Number(l.unit_price) || 0;
+        return sum + q * p;
+      }, 0),
+    [lines],
+  );
+
+  function update(key: number, patch: Partial<BcEditLine>) {
+    setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  }
+
+  async function submit() {
+    setError(null);
+    const filled = lines.filter((l) => l.part_id);
+    if (filled.length === 0) {
+      setError("Le bon doit contenir au moins une ligne.");
+      return;
+    }
+    const ids = filled.map((l) => l.part_id);
+    if (new Set(ids).size !== ids.length) {
+      setError("Une même pièce ne peut apparaître qu'une seule fois.");
+      return;
+    }
+    for (const l of filled) {
+      const q = Number(l.quantity);
+      if (!Number.isInteger(q) || q <= 0) {
+        setError(`Quantité invalide pour « ${l.reference || "?"} ».`);
+        return;
+      }
+      if (l.unit_price !== "" && Number(l.unit_price) < 0) {
+        setError(`Prix invalide pour « ${l.reference || "?"} ».`);
+        return;
+      }
+    }
+
+    const items: PurchaseRequestItemInput[] = filled.map((l) => ({
+      part_id: l.part_id,
+      quantity: Number(l.quantity),
+      unit_price: l.unit_price === "" ? null : String(Number(l.unit_price)),
+    }));
+
+    setBusy(true);
+    try {
+      await api.updatePurchaseRequest(bc.id, { items });
+      onSaved();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : "Enregistrement impossible.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title={`Modifier les lignes — ${bc.bc_number}`}
+      onClose={onClose}
+      wide
+      footer={
+        <>
+          <button className="btn" onClick={onClose} disabled={busy}>
+            Annuler
+          </button>
+          <button className="btn btn-primary" onClick={submit} disabled={busy}>
+            {busy ? "Enregistrement…" : "Enregistrer"}
+          </button>
+        </>
+      }
+    >
+      {error && <ErrorBox message={error} />}
+
+      <div className="table-wrap" style={{ marginBottom: 12 }}>
+        <table className="lines-table">
+          <thead>
+            <tr>
+              <th>Pièce</th>
+              <th className="num" style={{ width: 100 }}>
+                Quantité
+              </th>
+              <th className="num" style={{ width: 140 }}>
+                Prix unit. (FCFA)
+              </th>
+              <th className="num" style={{ width: 110 }}>
+                Total
+              </th>
+              <th style={{ width: 40 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((l) => {
+              const q = Number(l.quantity) || 0;
+              const p = Number(l.unit_price) || 0;
+              const lineTotal = q * p;
+              return (
+                <tr key={l.key}>
+                  <td>
+                    {l.isNew ? (
+                      <PartCombobox
+                        parts={parts.data?.items ?? []}
+                        value={l.part_id}
+                        onChange={(partId) => {
+                          const pt = parts.data?.items.find(
+                            (x: PartDetail) => x.id === partId,
+                          );
+                          update(l.key, {
+                            part_id: partId,
+                            reference: pt?.reference ?? "",
+                            designation: pt?.designation ?? "",
+                          });
+                        }}
+                        placeholder="Choisir une pièce…"
+                      />
+                    ) : (
+                      <span>
+                        <span className="mono">{l.reference}</span> —{" "}
+                        {l.designation}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    <input
+                      className="input num"
+                      type="number"
+                      min={1}
+                      value={l.quantity}
+                      onChange={(e) =>
+                        update(l.key, { quantity: e.target.value })
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input
+                      className="input num"
+                      type="number"
+                      min={0}
+                      placeholder="—"
+                      value={l.unit_price}
+                      onChange={(e) =>
+                        update(l.key, { unit_price: e.target.value })
+                      }
+                    />
+                  </td>
+                  <td className="num line-total">
+                    {lineTotal > 0 ? formatFCFA(lineTotal) : "—"}
+                  </td>
+                  <td className="num">
+                    <button
+                      className="btn-link danger"
+                      onClick={() =>
+                        setLines((ls) =>
+                          ls.length > 1
+                            ? ls.filter((x) => x.key !== l.key)
+                            : ls,
+                        )
+                      }
+                      disabled={lines.length <= 1}
+                      title="Retirer la ligne"
+                    >
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="row-flex" style={{ justifyContent: "space-between" }}>
+        <button
+          className="btn btn-sm"
+          onClick={() =>
+            setLines((ls) => [
+              ...ls,
+              {
+                key: ++bcEditCounter,
+                part_id: "",
+                reference: "",
+                designation: "",
+                quantity: "1",
+                unit_price: "",
+                isNew: true,
+              },
+            ])
+          }
+        >
+          + Ajouter une ligne
+        </button>
+        <div style={{ fontWeight: 600 }}>
+          Total :{" "}
+          <span style={{ color: "var(--accent)" }}>{formatFCFA(total)}</span>
+        </div>
+      </div>
     </Modal>
   );
 }

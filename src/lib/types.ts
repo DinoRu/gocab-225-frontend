@@ -335,6 +335,7 @@ export interface PurchaseRequest {
   expected_date: string | null;
   status: BcStatus;
   purchase_order_id: string | null;
+  supply_request_id?: string | null; 
   order_number: string | null;
   notes: string | null;
   items: PurchaseRequestItemRead[];
@@ -418,7 +419,7 @@ export interface SupplyRequest {
   notes: string | null;
   created_by: string | null;
   created_by_name: string | null;
-  items: SupplyRequestItemRead[];
+  items: SupplyRequestItem[];
   linked_bcs: LinkedBc[];
   created_at: string;
 }
@@ -435,8 +436,20 @@ export interface SupplyRequestCreateInput {
 }
 
 // Création d'un bon depuis un besoin (admin)
-export interface BcItemInput {
+// Ligne de besoin enrichie du suivi de consommation
+export interface SupplyRequestItem {
+  id: string;
   part_id: string;
+  reference: string;
+  designation: string;
+  quantity: number;              // demandé
+  ordered_quantity: number;      // déjà parti en bon
+  remaining_quantity: number;    // reste à commander
+}
+
+// Entrée d'une ligne lors de la création d'un bon depuis un besoin
+export interface BcFromSupplyItemInput {
+  supply_request_item_id: string;
   quantity: number;
   unit_price?: string | null;
 }
@@ -447,5 +460,38 @@ export interface BcFromSupplyInput {
   request_date: string;
   expected_date?: string | null;
   notes?: string | null;
-  items?: BcItemInput[];
+  items: BcFromSupplyItemInput[];
+}
+
+
+// --- Trace d'audit (commandes & comptages, même forme) ---
+export interface AuditEntry {
+  id: string;
+  username: string | null;
+  changes: string[];
+  created_at: string;
+}
+
+// --- Impact d'édition d'un comptage ---
+export interface PosteriorCount {
+  id: string;
+  count_number: string;
+  count_date: string;
+}
+
+export interface InventoryEditImpact {
+  is_leaf: boolean;
+  editable_by_magazinier: boolean;
+  posterior: PosteriorCount[];
+}
+
+// --- Édition de commande ---
+export interface OrderLineInput {
+  part_id: string;
+  quantity: number;
+  unit_price?: string | null;
+}
+
+export interface OrderInventoryImpact {
+  used_by_inventory: boolean;
 }

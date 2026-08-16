@@ -12,7 +12,7 @@ import { useRouter, usePathname } from "next/navigation";
 import {
   api,
   getToken,
-  setToken,
+  setTokens,
   clearToken,
   setUnauthorizedHandler,
 } from "@/lib/api";
@@ -35,7 +35,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   // Déconnexion : vide le token, l'utilisateur, et renvoie au login.
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    await api.logout(); // révoque le refresh côté serveur
     clearToken();
     setUser(null);
     router.push("/login");
@@ -72,15 +73,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (username: string, password: string) => {
-      const { access_token } = await api.login(username, password);
-      setToken(access_token);
+      const { access_token, refresh_token } = await api.login(
+        username,
+        password,
+      );
+      setTokens(access_token, refresh_token); // ← les deux tokens
       const u = await api.me();
       setUser(u);
       router.push("/");
     },
     [router],
   );
-
   return (
     <AuthContext.Provider
       value={{ user, loading, login, logout, isAdmin: user?.role === "admin" }}
