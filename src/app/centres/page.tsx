@@ -21,6 +21,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { PartFreeCombobox } from "@/components/PartFreeCombobox";
+import Link from "next/link";
 
 const LIMIT = 20;
 
@@ -84,9 +85,16 @@ export default function CenterRequestsPage() {
               : "Vos demandes de pièces à l'entrepôt du Centre 1"}
           </div>
         </div>
-        <button className="btn btn-primary" onClick={() => setCreating(true)}>
-          + Nouvelle demande
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {isAdmin && (
+            <Link href="/centres/preparation" className="btn">
+              Liste de préparation
+            </Link>
+          )}
+          <button className="btn btn-primary" onClick={() => setCreating(true)}>
+            + Nouvelle demande
+          </button>
+        </div>
       </div>
 
       {/* Filtres par statut */}

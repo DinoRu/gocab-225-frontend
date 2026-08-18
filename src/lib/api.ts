@@ -59,6 +59,7 @@ import type {
   CenterStatus,
   CenterRequest,
   CenterRequestInput,
+  PreparationList,
 } from "./types";
 
 const BASE_URL =
@@ -778,6 +779,10 @@ export const api = {
   },
   setCenterStatus(requestId: string, status: CenterStatus): Promise<CenterRequest> {
     return request<CenterRequest>("POST", `/center-requests/${requestId}/status`, { body: { status } });
+  },
+
+  centerPreparationList(): Promise<PreparationList> {
+    return request<PreparationList>("GET", "/center-requests/preparation/list");
   },
 };
 

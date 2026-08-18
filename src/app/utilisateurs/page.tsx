@@ -21,6 +21,7 @@ const LIMIT = 20;
 const ROLE_LABEL: Record<UserRole, string> = {
   admin: "Administrateur",
   magazinier: "Magazinier",
+  centre: "Centre",
 };
 
 export default function UsersPage() {

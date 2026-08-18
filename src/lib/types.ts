@@ -736,3 +736,23 @@ export interface CenterRequestInput {
   notes?: string | null;
   items: CenterItemInput[];
 }
+
+export interface PrepSource {
+  request_number: string;
+  vehicle: string;
+  plate_number: string | null;
+  quantity: number;
+  note: string | null;
+}
+export interface PrepItem {
+  designation: string;
+  from_catalog: boolean;
+  total_quantity: number;
+  sources: PrepSource[];
+}
+export interface PreparationList {
+  generated_at: string;
+  request_count: number;
+  distinct_parts: number;
+  items: PrepItem[];
+}
