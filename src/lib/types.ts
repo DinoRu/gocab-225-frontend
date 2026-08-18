@@ -361,7 +361,7 @@ export interface PurchaseRequestCreateInput {
 
 
 // --- Authentification ---
-export type UserRole = "admin" | "magazinier";
+export type UserRole = "admin" | "magazinier" | "centre";
 
 export interface CurrentUser {
   id: string;
@@ -494,4 +494,245 @@ export interface OrderLineInput {
 
 export interface OrderInventoryImpact {
   used_by_inventory: boolean;
+}
+
+// ===================== MODULE VENTES =====================
+
+// --- Clients ---
+export interface SalesClient {
+  id: string;
+  name: string;
+  contact_name: string | null;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+  created_at: string;
+}
+export interface SalesClientInput {
+  name: string;
+  contact_name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  notes?: string | null;
+}
+
+// --- Produits (catalogue) ---
+export interface SalesProduct {
+  id: string;
+  reference: string | null;
+  designation: string;
+  default_purchase_price: string | null;
+  default_sale_price: string | null;
+  notes: string | null;
+  created_at: string;
+}
+export interface SalesProductInput {
+  reference?: string | null;
+  designation: string;
+  default_purchase_price?: string | null;
+  default_sale_price?: string | null;
+  notes?: string | null;
+}
+
+// --- Ventes ---
+export interface SalesOrderItem {
+  id: string;
+  product_id: string | null;
+  designation: string;
+  quantity: number;
+  purchase_price: string;
+  sale_price: string;
+  line_total: string;
+  line_margin: string;
+}
+
+export interface SalesOrderItemInput {
+  product_id?: string | null;
+  designation: string;
+  quantity: number;
+  purchase_price: string;
+  sale_price: string;
+}
+
+export interface SalesOrder {
+  id: string;
+  sale_number: string;
+  client_id: string;
+  client_name: string;
+  sale_date: string;
+  notes: string | null;
+  items: SalesOrderItem[];
+  total_sale: string;
+  total_purchase: string;
+  total_margin: string;
+  vat_rate: string;        // "0.18"
+  vat_amount: string;      // TVA
+  total_ttc: string;       // TTC
+  created_at: string;
+}
+
+export interface SalesOrderInput {
+  client_id: string;
+  sale_date: string;
+  notes?: string | null;
+  items: SalesOrderItemInput[];
+}
+
+// --- Paiements ---
+export interface PaymentAllocation {
+  sales_order_id: string;
+  sale_number: string;
+  amount: string;
+}
+
+export interface SalesPayment {
+  id: string;
+  payment_number: string;
+  client_id: string;
+  client_name: string;
+  payment_date: string;
+  amount: string;
+  method: string | null;
+  notes: string | null;
+  allocations: PaymentAllocation[];
+  created_at: string;
+}
+
+export interface SalesPaymentInput {
+  client_id: string;
+  payment_date: string;
+  amount: string;
+  method?: string | null;
+  notes?: string | null;
+}
+
+// --- Grand livre ---
+export interface LedgerSaleRow {
+  id: string;
+  sale_number: string;
+  sale_date: string;
+  total_sale: string;
+  paid: string;
+  remaining: string;
+}
+
+export interface LedgerEntry {
+  date: string;
+  kind: "sale" | "payment";
+  ref: string;
+  debit: string | null;
+  credit: string | null;
+  running_balance: string;
+}
+
+export interface ClientLedger {
+  client_id: string;
+  client_name: string;
+  total_sold: string;
+  total_paid: string;
+  balance: string;
+  unpaid_sales: LedgerSaleRow[];
+  entries: LedgerEntry[];
+}
+
+export interface SalesMonthly { month: string; ca: string; benefice: string; }
+export interface SalesTopClient { client_id: string; name: string; ca: string; }
+export interface SalesDashboard {
+  period: { start_date: string; end_date: string };
+  ca: string;
+  tva_collectee: string;   // ← nouveau
+  depenses: string;
+  benefice: string;
+  creances: string;
+  by_month: SalesMonthly[];
+  top_clients: SalesTopClient[];
+}
+
+// --- Proformas ---
+export type ProformaStatus = "en_cours" | "convertie";
+
+export interface ProformaItem {
+  id: string;
+  product_id: string | null;
+  designation: string;
+  quantity: number;
+  sale_price: string;
+  line_total: string;
+}
+export interface ProformaItemInput {
+  product_id?: string | null;
+  designation: string;
+  quantity: number;
+  sale_price: string;
+}
+export interface SalesProforma {
+  id: string;
+  proforma_number: string;
+  client_id: string;
+  client_name: string;
+  proforma_date: string;
+  status: ProformaStatus;
+  notes: string | null;
+  converted_sale_id: string | null;
+  converted_sale_number: string | null;
+  items: ProformaItem[];
+  total: string;
+  created_at: string;
+}
+export interface SalesProformaInput {
+  client_id: string;
+  proforma_date: string;
+  notes?: string | null;
+  items: ProformaItemInput[];
+}
+export interface ProformaConvertItemInput {
+  proforma_item_id: string;
+  purchase_price: string;
+}
+export interface ProformaConvertInput {
+  sale_date: string;
+  items: ProformaConvertItemInput[];
+}
+
+// ===================== MODULE DEMANDES INTER-CENTRES =====================
+export type CenterStatus = "nouvelle" | "preparee" | "envoyee";
+
+export interface CenterItem {
+  id: string;
+  part_id: string | null;
+  designation: string;
+  quantity: number;
+  note: string | null;
+  prepared: boolean;
+  from_catalog: boolean;
+}
+export interface CenterItemInput {
+  part_id?: string | null;
+  designation: string;
+  quantity: number;
+  note?: string | null;
+}
+export interface CenterRequest {
+  id: string;
+  request_number: string;
+  vehicle_brand: string;
+  vehicle_model: string;
+  plate_number: string | null;
+  request_date: string;
+  status: CenterStatus;
+  notes: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  items: CenterItem[];
+  prepared_count: number;
+  total_items: number;
+  created_at: string;
+}
+export interface CenterRequestInput {
+  vehicle_brand: string;
+  vehicle_model: string;
+  plate_number?: string | null;
+  request_date: string;
+  notes?: string | null;
+  items: CenterItemInput[];
 }

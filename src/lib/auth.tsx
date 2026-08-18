@@ -24,6 +24,7 @@ interface AuthState {
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   isAdmin: boolean;
+  isCentre: boolean; // ← ajoute
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -77,16 +78,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         username,
         password,
       );
-      setTokens(access_token, refresh_token); // ← les deux tokens
+      setTokens(access_token, refresh_token);
       const u = await api.me();
       setUser(u);
-      router.push("/");
+      // Le centre n'a qu'un module → on l'y envoie directement.
+      router.push(u.role === "centre" ? "/centres" : "/accueil");
     },
     [router],
   );
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, logout, isAdmin: user?.role === "admin" }}
+      value={{
+        user,
+        loading,
+        login,
+        logout,
+        isAdmin: user?.role === "admin",
+        isCentre: user?.role === "centre", // ← ajoute
+      }}
     >
       {children}
     </AuthContext.Provider>

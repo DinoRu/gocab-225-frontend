@@ -42,6 +42,23 @@ import type {
   AuditEntry,
   OrderLineInput,
   OrderInventoryImpact,
+  SalesClient,
+  SalesClientInput,
+  SalesProduct,
+  SalesProductInput,
+  SalesOrder,
+  SalesOrderInput,
+  SalesPayment,
+  SalesPaymentInput,
+  ClientLedger,
+  SalesDashboard,
+  ProformaStatus,
+  SalesProforma,
+  SalesProformaInput,
+  ProformaConvertInput,
+  CenterStatus,
+  CenterRequest,
+  CenterRequestInput,
 } from "./types";
 
 const BASE_URL =
@@ -650,6 +667,118 @@ export const api = {
     return request<OrderInventoryImpact>("GET", `/purchase-orders/${id}/inventory-impact`);
   },
 
+  // ============ VENTES : Clients ============
+  listSalesClients(query: { search?: string; page?: number; limit?: number } = {}): Promise<Page<SalesClient>> {
+    return request<Page<SalesClient>>("GET", "/sales/clients", { query: { limit: 50, ...query } });
+  },
+  createSalesClient(body: SalesClientInput): Promise<SalesClient> {
+    return request<SalesClient>("POST", "/sales/clients", { body });
+  },
+  updateSalesClient(id: string, body: Partial<SalesClientInput>): Promise<SalesClient> {
+    return request<SalesClient>("PATCH", `/sales/clients/${id}`, { body });
+  },
+  deleteSalesClient(id: string): Promise<void> {
+    return request<void>("DELETE", `/sales/clients/${id}`);
+  },
+
+  // ============ VENTES : Produits ============
+  listSalesProducts(query: { search?: string; page?: number; limit?: number } = {}): Promise<Page<SalesProduct>> {
+    return request<Page<SalesProduct>>("GET", "/sales/products", { query: { limit: 50, ...query } });
+  },
+  createSalesProduct(body: SalesProductInput): Promise<SalesProduct> {
+    return request<SalesProduct>("POST", "/sales/products", { body });
+  },
+  updateSalesProduct(id: string, body: Partial<SalesProductInput>): Promise<SalesProduct> {
+    return request<SalesProduct>("PATCH", `/sales/products/${id}`, { body });
+  },
+  deleteSalesProduct(id: string): Promise<void> {
+    return request<void>("DELETE", `/sales/products/${id}`);
+  },
+
+  // ============ VENTES : Ventes ============
+  listSalesOrders(query: { search?: string; client_id?: string; start_date?: string; end_date?: string; page?: number; limit?: number } = {}): Promise<Page<SalesOrder>> {
+    return request<Page<SalesOrder>>("GET", "/sales/orders", { query: { limit: 20, ...query } });
+  },
+  getSalesOrder(id: string): Promise<SalesOrder> {
+    return request<SalesOrder>("GET", `/sales/orders/${id}`);
+  },
+  createSalesOrder(body: SalesOrderInput): Promise<SalesOrder> {
+    return request<SalesOrder>("POST", "/sales/orders", { body });
+  },
+  updateSalesOrder(id: string, body: Partial<SalesOrderInput>): Promise<SalesOrder> {
+    return request<SalesOrder>("PATCH", `/sales/orders/${id}`, { body });
+  },
+  deleteSalesOrder(id: string): Promise<void> {
+    return request<void>("DELETE", `/sales/orders/${id}`);
+  },
+
+  // ============ VENTES : Paiements ============
+  listSalesPayments(query: { client_id?: string; start_date?: string; end_date?: string; page?: number; limit?: number } = {}): Promise<Page<SalesPayment>> {
+    return request<Page<SalesPayment>>("GET", "/sales/payments", { query: { limit: 20, ...query } });
+  },
+
+  createSalesPayment(body: SalesPaymentInput): Promise<SalesPayment> {
+    return request<SalesPayment>("POST", "/sales/payments", { body });
+  },
+
+  deleteSalesPayment(id: string): Promise<void> {
+    return request<void>("DELETE", `/sales/payments/${id}`);
+  },
+
+  // ============ VENTES : Grand livre ============
+  clientLedger(clientId: string): Promise<ClientLedger> {
+    return request<ClientLedger>("GET", `/sales/clients/${clientId}/ledger`);
+  },
+
+  salesDashboard(months = 12): Promise<SalesDashboard> {
+    return request<SalesDashboard>("GET", "/sales/dashboard", { query: { months } });
+  },
+
+  // ============ VENTES : Proformas ============
+  listSalesProformas(query: { client_id?: string; status?: ProformaStatus; page?: number; limit?: number } = {}): Promise<Page<SalesProforma>> {
+    return request<Page<SalesProforma>>("GET", "/sales/proformas", { query: { limit: 20, ...query } });
+  },
+  getSalesProforma(id: string): Promise<SalesProforma> {
+    return request<SalesProforma>("GET", `/sales/proformas/${id}`);
+  },
+  createSalesProforma(body: SalesProformaInput): Promise<SalesProforma> {
+    return request<SalesProforma>("POST", "/sales/proformas", { body });
+  },
+  updateSalesProforma(id: string, body: Partial<SalesProformaInput>): Promise<SalesProforma> {
+    return request<SalesProforma>("PATCH", `/sales/proformas/${id}`, { body });
+  },
+  deleteSalesProforma(id: string): Promise<void> {
+    return request<void>("DELETE", `/sales/proformas/${id}`);
+  },
+  convertSalesProforma(id: string, body: ProformaConvertInput): Promise<SalesProforma> {
+    return request<SalesProforma>("POST", `/sales/proformas/${id}/convert`, { body });
+  },
+  proformaPdfUrl(id: string): string {
+    return buildUrl(`/sales/proformas/${id}/pdf`);
+  },
+
+  // ============ DEMANDES INTER-CENTRES ============
+  listCenterRequests(query: { status?: CenterStatus; page?: number; limit?: number } = {}): Promise<Page<CenterRequest>> {
+    return request<Page<CenterRequest>>("GET", "/center-requests", { query: { limit: 20, ...query } });
+  },
+  getCenterRequest(id: string): Promise<CenterRequest> {
+    return request<CenterRequest>("GET", `/center-requests/${id}`);
+  },
+  createCenterRequest(body: CenterRequestInput): Promise<CenterRequest> {
+    return request<CenterRequest>("POST", "/center-requests", { body });
+  },
+  updateCenterRequest(id: string, body: Partial<CenterRequestInput>): Promise<CenterRequest> {
+    return request<CenterRequest>("PATCH", `/center-requests/${id}`, { body });
+  },
+  deleteCenterRequest(id: string): Promise<void> {
+    return request<void>("DELETE", `/center-requests/${id}`);
+  },
+  toggleCenterItem(requestId: string, itemId: string, prepared: boolean): Promise<CenterRequest> {
+    return request<CenterRequest>("POST", `/center-requests/${requestId}/items/${itemId}/toggle`, { body: { prepared } });
+  },
+  setCenterStatus(requestId: string, status: CenterStatus): Promise<CenterRequest> {
+    return request<CenterRequest>("POST", `/center-requests/${requestId}/status`, { body: { status } });
+  },
 };
 
 

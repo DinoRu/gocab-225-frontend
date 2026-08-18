@@ -4,10 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
+import { zoneFromPath, type AppZone } from "@/lib/appZone";
 
 type NavLink = { href: string; label: string; admin: boolean };
 
-const LINKS: NavLink[] = [
+const PIECES_LINKS: NavLink[] = [
   { href: "/", label: "Tableau de bord", admin: false },
   { href: "/statistiques", label: "Statistiques", admin: true },
   { href: "/commandes", label: "Commandes", admin: false },
@@ -20,6 +21,19 @@ const LINKS: NavLink[] = [
   { href: "/modeles", label: "Modèles", admin: false },
   { href: "/fournisseurs", label: "Fournisseurs", admin: true },
   { href: "/utilisateurs", label: "Utilisateurs", admin: true },
+];
+
+const VENTES_LINKS: NavLink[] = [
+  { href: "/ventes", label: "Tableau de bord", admin: true },
+  { href: "/ventes/clients", label: "Clients", admin: true },
+  { href: "/ventes/produits", label: "Produits", admin: true },
+  { href: "/ventes/ventes", label: "Ventes", admin: true },
+  { href: "/ventes/paiements", label: "Paiements", admin: true },
+  { href: "/ventes/proformas", label: "Proformas", admin: true },
+];
+
+const CENTRES_LINKS: NavLink[] = [
+  { href: "/centres", label: "Demandes", admin: false },
 ];
 
 // Icônes SVG (trait) par module. Héritent de la couleur du texte (blanc sur la pastille).
@@ -110,6 +124,46 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </>
   ),
+  "/ventes": (
+    <>
+      <line x1="6" y1="20" x2="6" y2="14" />
+      <line x1="12" y1="20" x2="12" y2="4" />
+      <line x1="18" y1="20" x2="18" y2="10" />
+    </>
+  ),
+  "/ventes/clients": (
+    <>
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+    </>
+  ),
+  "/ventes/produits": (
+    <>
+      <path d="M20.5 7.3 12 2 3.5 7.3v9.4L12 22l8.5-5.3z" />
+      <path d="M3.5 7.3 12 12l8.5-4.7" />
+      <line x1="12" y1="22" x2="12" y2="12" />
+    </>
+  ),
+  "/ventes/ventes": (
+    <>
+      <line x1="12" y1="1" x2="12" y2="23" />
+      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </>
+  ),
+  "/ventes/paiements": (
+    <>
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <line x1="2" y1="10" x2="22" y2="10" />
+    </>
+  ),
+  "/ventes/proformas": (
+    <>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+    </>
+  ),
 };
 
 function ModuleIcon({ href }: { href: string }) {
@@ -135,13 +189,21 @@ export function Nav() {
   const [open, setOpen] = useState(false);
   const leftRef = useRef<HTMLDivElement>(null);
 
-  const visible = LINKS.filter((l) => !l.admin || isAdmin);
+  const zone: AppZone = zoneFromPath(pathname);
+  const links =
+    zone === "ventes"
+      ? VENTES_LINKS
+      : zone === "centres"
+        ? CENTRES_LINKS
+        : PIECES_LINKS;
+  const visible = links.filter((l) => !l.admin || isAdmin);
 
   const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
+    href === "/" || href === "/ventes"
+      ? pathname === href
+      : pathname.startsWith(href);
 
   const current = visible.find((l) => isActive(l.href));
-
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
@@ -163,6 +225,13 @@ export function Nav() {
       document.removeEventListener("keydown", onEsc);
     };
   }, [open]);
+
+  const userRoleLabel =
+    user?.role === "admin"
+      ? "Admin"
+      : user?.role === "centre"
+        ? "Centre"
+        : "Magazinier";
 
   return (
     <header className="topbar">
@@ -190,6 +259,30 @@ export function Nav() {
           GOCAB<span> 225</span>
         </div>
 
+        {/* Sélecteur d'app : bascule pièces ↔ ventes (admin voit les deux) */}
+        {isAdmin && (
+          <div className="app-switcher">
+            <Link
+              href="/"
+              className={"app-switch" + (zone === "pieces" ? " active" : "")}
+            >
+              Pièces
+            </Link>
+            <Link
+              href="/ventes"
+              className={"app-switch" + (zone === "ventes" ? " active" : "")}
+            >
+              Ventes
+            </Link>
+            <Link
+              href="/centres"
+              className={"app-switch" + (zone === "centres" ? " active" : "")}
+            >
+              Centres
+            </Link>
+          </div>
+        )}
+
         {current && <div className="topbar-current">{current.label}</div>}
 
         {open && (
@@ -216,9 +309,7 @@ export function Nav() {
       <div className="topbar-user">
         <span className="topbar-username">
           {user?.full_name || user?.username}
-          <span className="topbar-role">
-            {isAdmin ? "Admin" : "Magazinier"}
-          </span>
+          <span className="topbar-role">{userRoleLabel}</span>
         </span>
         <button className="btn btn-sm" onClick={logout}>
           Déconnexion
