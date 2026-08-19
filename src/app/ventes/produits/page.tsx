@@ -5,6 +5,8 @@ import { api, ApiError } from "@/lib/api";
 import { useAsync } from "@/lib/useAsync";
 import { formatFCFA } from "@/lib/format";
 import type { SalesProduct, SalesProductInput } from "@/lib/types";
+import { SALES_UNITS, DEFAULT_UNIT } from "@/lib/units";
+
 import {
   ConfirmDialog,
   EmptyState,
@@ -131,7 +133,18 @@ export default function SalesProductsPage() {
                     <td className="mono">
                       {p.reference || <span className="muted">—</span>}
                     </td>
-                    <td style={{ fontWeight: 600 }}>{p.designation}</td>
+                    <td style={{ fontWeight: 600 }}>
+                      {p.designation}
+                      {p.default_unit && (
+                        <span
+                          className="muted"
+                          style={{ fontWeight: 400, fontSize: 11 }}
+                        >
+                          {" "}
+                          / {p.default_unit}
+                        </span>
+                      )}
+                    </td>
                     <td className="num">
                       {pa != null ? (
                         formatFCFA(pa)
@@ -241,6 +254,7 @@ function ProductForm({
   const [notes, setNotes] = useState(product?.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unit, setUnit] = useState(product?.default_unit ?? DEFAULT_UNIT);
 
   // Marge prévisionnelle en direct
   const margin =
@@ -265,6 +279,7 @@ function ProductForm({
       designation: designation.trim(),
       default_purchase_price: purchase.trim() ? String(Number(purchase)) : null,
       default_sale_price: sale.trim() ? String(Number(sale)) : null,
+      default_unit: unit, // ← ajoute
       notes: notes.trim() || null,
     };
     setBusy(true);
@@ -298,7 +313,7 @@ function ProductForm({
 
       <div
         className="form-grid"
-        style={{ gridTemplateColumns: "1fr 2fr", marginBottom: 12 }}
+        style={{ gridTemplateColumns: "1fr 2fr 1fr", marginBottom: 12 }}
       >
         <div className="field">
           <label>Référence</label>
@@ -319,6 +334,20 @@ function ProductForm({
             onChange={(e) => setDesignation(e.target.value)}
             autoFocus
           />
+        </div>
+        <div className="field">
+          <label>Unité</label>
+          <select
+            className="select"
+            value={unit}
+            onChange={(e) => setUnit(e.target.value)}
+          >
+            {SALES_UNITS.map((u) => (
+              <option key={u} value={u}>
+                {u}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

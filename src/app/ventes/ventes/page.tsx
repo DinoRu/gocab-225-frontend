@@ -20,6 +20,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { ProductCombobox } from "@/components/ProductCombobox";
+import { SALES_UNITS, DEFAULT_UNIT, formatQtyUnit } from "@/lib/units";
 
 const LIMIT = 20;
 
@@ -288,7 +289,9 @@ function SaleDetail({ id, onClose }: { id: string; onClose: () => void }) {
                 {data.items.map((it) => (
                   <tr key={it.id}>
                     <td>{it.designation}</td>
-                    <td className="num">{formatNumber(it.quantity)}</td>
+                    <td className="num">
+                      {formatQtyUnit(it.quantity, it.unit)}
+                    </td>
                     <td className="num">{formatFCFA(it.purchase_price)}</td>
                     <td className="num">{formatFCFA(it.sale_price)}</td>
                     <td className="num">{formatFCFA(it.line_total)}</td>
@@ -332,6 +335,7 @@ type SaleLine = {
   product_id: string | null;
   designation: string;
   quantity: string;
+  unit: string;
   purchase_price: string;
   sale_price: string;
 };
@@ -341,6 +345,7 @@ const newSaleLine = (): SaleLine => ({
   product_id: null,
   designation: "",
   quantity: "1",
+  unit: DEFAULT_UNIT,
   purchase_price: "",
   sale_price: "",
 });
@@ -433,6 +438,7 @@ function SaleForm({
       product_id: l.product_id,
       designation: l.designation.trim(),
       quantity: Number(l.quantity),
+      unit: l.unit,
       purchase_price: String(Number(l.purchase_price)),
       sale_price: String(Number(l.sale_price)),
     }));
@@ -513,6 +519,7 @@ function SaleForm({
               <th className="num" style={{ width: 70 }}>
                 Qté
               </th>
+              <th style={{ width: 100 }}>Unité</th>
               <th className="num" style={{ width: 120 }}>
                 Prix achat
               </th>
@@ -545,10 +552,10 @@ function SaleForm({
                         })
                       }
                       onPickProduct={(p) =>
-                        // choix catalogue : remplit désignation + prix (ajustables ensuite)
                         updateLine(l.key, {
                           product_id: p.id,
                           designation: p.designation,
+                          unit: p.default_unit || DEFAULT_UNIT, // ← pré-remplit
                           purchase_price:
                             p.default_purchase_price != null
                               ? String(p.default_purchase_price)
@@ -572,6 +579,21 @@ function SaleForm({
                         updateLine(l.key, { quantity: e.target.value })
                       }
                     />
+                  </td>
+                  <td>
+                    <select
+                      className="select"
+                      value={l.unit}
+                      onChange={(e) =>
+                        updateLine(l.key, { unit: e.target.value })
+                      }
+                    >
+                      {SALES_UNITS.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                   <td>
                     <input

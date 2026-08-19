@@ -22,6 +22,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { ProductCombobox } from "@/components/ProductCombobox";
+import { SALES_UNITS, DEFAULT_UNIT, formatQtyUnit } from "@/lib/units";
 
 const LIMIT = 20;
 
@@ -365,7 +366,9 @@ function ProformaDetail({
                 <thead>
                   <tr>
                     <th>Désignation</th>
-                    <th className="num">Qté</th>
+                    <th className="num" style={{ width: 100 }}>
+                      Qté
+                    </th>
                     <th className="num">Prix unitaire</th>
                     <th className="num">Total</th>
                   </tr>
@@ -374,7 +377,9 @@ function ProformaDetail({
                   {data.items.map((it) => (
                     <tr key={it.id}>
                       <td>{it.designation}</td>
-                      <td className="num">{formatNumber(it.quantity)}</td>
+                      <td className="num">
+                        {formatQtyUnit(it.quantity, it.unit)}
+                      </td>
                       <td className="num">{formatFCFA(it.sale_price)}</td>
                       <td className="num">{formatFCFA(it.line_total)}</td>
                     </tr>
@@ -545,7 +550,7 @@ function ConvertForm({
               return (
                 <tr key={it.id}>
                   <td>{it.designation}</td>
-                  <td className="num">{formatNumber(q)}</td>
+                  <td className="num">{formatQtyUnit(it.quantity, it.unit)}</td>
                   <td className="num">{formatFCFA(it.sale_price)}</td>
                   <td>
                     <input
@@ -607,6 +612,7 @@ type PfLine = {
   product_id: string | null;
   designation: string;
   quantity: string;
+  unit: string;
   sale_price: string;
 };
 let pfLineCounter = 0;
@@ -615,6 +621,7 @@ const newPfLine = (): PfLine => ({
   product_id: null,
   designation: "",
   quantity: "1",
+  unit: DEFAULT_UNIT,
   sale_price: "",
 });
 
@@ -676,6 +683,7 @@ function ProformaForm({
       product_id: l.product_id,
       designation: l.designation.trim(),
       quantity: Number(l.quantity),
+      unit: l.unit,
       sale_price: String(Number(l.sale_price)),
     }));
 
@@ -755,6 +763,7 @@ function ProformaForm({
               <th className="num" style={{ width: 70 }}>
                 Qté
               </th>
+              <th style={{ width: 100 }}>Unité</th>
               <th className="num" style={{ width: 130 }}>
                 Prix vente
               </th>
@@ -784,6 +793,7 @@ function ProformaForm({
                         updateLine(l.key, {
                           product_id: p.id,
                           designation: p.designation,
+                          unit: p.default_unit || DEFAULT_UNIT,
                           sale_price:
                             p.default_sale_price != null
                               ? String(p.default_sale_price)
@@ -803,6 +813,21 @@ function ProformaForm({
                         updateLine(l.key, { quantity: e.target.value })
                       }
                     />
+                  </td>
+                  <td>
+                    <select
+                      className="select"
+                      value={l.unit}
+                      onChange={(e) =>
+                        updateLine(l.key, { unit: e.target.value })
+                      }
+                    >
+                      {SALES_UNITS.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                   <td>
                     <input

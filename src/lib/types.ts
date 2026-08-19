@@ -523,6 +523,7 @@ export interface SalesProduct {
   designation: string;
   default_purchase_price: string | null;
   default_sale_price: string | null;
+  default_unit: string | null;   
   notes: string | null;
   created_at: string;
 }
@@ -531,6 +532,7 @@ export interface SalesProductInput {
   designation: string;
   default_purchase_price?: string | null;
   default_sale_price?: string | null;
+  default_unit?: string | null;
   notes?: string | null;
 }
 
@@ -540,6 +542,7 @@ export interface SalesOrderItem {
   product_id: string | null;
   designation: string;
   quantity: number;
+  unit: string;        
   purchase_price: string;
   sale_price: string;
   line_total: string;
@@ -550,6 +553,7 @@ export interface SalesOrderItemInput {
   product_id?: string | null;
   designation: string;
   quantity: number;
+  unit: string;
   purchase_price: string;
   sale_price: string;
 }
@@ -656,6 +660,7 @@ export interface ProformaItem {
   product_id: string | null;
   designation: string;
   quantity: number;
+  unit: string;    
   sale_price: string;
   line_total: string;
 }
@@ -663,8 +668,10 @@ export interface ProformaItemInput {
   product_id?: string | null;
   designation: string;
   quantity: number;
+  unit: string;  
   sale_price: string;
 }
+
 export interface SalesProforma {
   id: string;
   proforma_number: string;
