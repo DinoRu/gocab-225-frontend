@@ -1,9 +1,9 @@
 export const COMPANY = {
-  name: "GOCAB 225",
+  name: " SEP CI",
   lines: [
     "Abidjan, Côte d'Ivoire",
-    "N° Contribuable : XXXXXXXXX",
-    "Tél : +225 XX XX XX XX XX",
+    // "N° Contribuable : XXXXXXXXX",
+    "Tél : +225 07 98 43 39 27",
   ],
 };
 
