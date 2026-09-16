@@ -30,6 +30,7 @@ const VENTES_LINKS: NavLink[] = [
   { href: "/ventes/ventes", label: "Ventes", admin: true },
   { href: "/ventes/paiements", label: "Paiements", admin: true },
   { href: "/ventes/proformas", label: "Proformas", admin: true },
+  { href: "/ventes/livraisons", label: "Livraisons", admin: true },
 ];
 
 const CENTRES_LINKS: NavLink[] = [
@@ -162,6 +163,14 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <polyline points="14 2 14 8 20 8" />
       <line x1="16" y1="13" x2="8" y2="13" />
+    </>
+  ),
+  "/ventes/livraisons": (
+    <>
+      <rect x="1" y="3" width="15" height="13" rx="1" />
+      <polygon points="16 8 20 8 23 11 23 16 16 16 16 8" />
+      <circle cx="5.5" cy="18.5" r="2.5" />
+      <circle cx="18.5" cy="18.5" r="2.5" />
     </>
   ),
 };

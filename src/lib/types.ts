@@ -537,6 +537,8 @@ export interface SalesProductInput {
 }
 
 // --- Ventes ---
+export type SalePaymentStatus = "impayee" | "partiellement_payee" | "payee";
+
 export interface SalesOrderItem {
   id: string;
   product_id: string | null;
@@ -572,6 +574,10 @@ export interface SalesOrder {
   vat_rate: string;        // "0.18"
   vat_amount: string;      // TVA
   total_ttc: string;       // TTC
+  delivery_status: DeliveryStatus
+  payment_status: SalePaymentStatus;    // ← ajoute
+  amount_paid: string;              // ← ajoute
+  amount_due: string;  
   created_at: string;
 }
 
@@ -664,12 +670,14 @@ export interface ProformaItem {
   sale_price: string;
   line_total: string;
 }
+
 export interface ProformaItemInput {
   product_id?: string | null;
   designation: string;
   quantity: number;
   unit: string;  
   sale_price: string;
+  add_to_catalog?: boolean; 
 }
 
 export interface SalesProforma {
@@ -751,15 +759,84 @@ export interface PrepSource {
   quantity: number;
   note: string | null;
 }
+
+
 export interface PrepItem {
   designation: string;
   from_catalog: boolean;
   total_quantity: number;
   sources: PrepSource[];
 }
+
 export interface PreparationList {
   generated_at: string;
   request_count: number;
   distinct_parts: number;
   items: PrepItem[];
+}
+
+// --- Bons de livraison ---
+export type DeliveryStatus = "non_livree" | "partiellement_livree" | "livree";
+
+
+export interface DeliveryItem {
+  id: string;
+  sales_order_item_id: string | null;
+  designation: string;
+  quantity: number;
+  unit: string;
+  sale_price: string;
+  line_total: string;
+}
+
+
+export interface DeliveryItemInput {
+  sales_order_item_id?: string | null;
+  designation: string;
+  quantity: number;
+  unit: string;
+  sale_price: string;
+}
+
+
+export interface DeliveryNote {
+  id: string;
+  delivery_number: string;
+  sales_order_id: string;
+  sale_number: string;
+  client_id: string;
+  client_name: string;
+  delivery_date: string;
+  notes: string | null;
+  items: DeliveryItem[];
+  total: string;
+  created_at: string;
+}
+
+
+export interface DeliveryNoteInput {
+  sales_order_id: string;
+  delivery_date: string;
+  notes?: string | null;
+  items: DeliveryItemInput[];
+}
+
+
+export interface DeliverableLine {
+  sales_order_item_id: string;
+  designation: string;
+  unit: string;
+  sale_price: string;
+  quantity_ordered: number;
+  quantity_delivered: number;
+  quantity_remaining: number;
+}
+
+
+export interface DeliverableSale {
+  sales_order_id: string;
+  sale_number: string;
+  client_id: string;
+  client_name: string;
+  lines: DeliverableLine[];
 }

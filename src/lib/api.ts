@@ -60,6 +60,9 @@ import type {
   CenterRequest,
   CenterRequestInput,
   PreparationList,
+  DeliveryNote,
+  DeliverableSale,
+  DeliveryNoteInput,
 } from "./types";
 
 const BASE_URL =
@@ -783,6 +786,33 @@ export const api = {
 
   centerPreparationList(): Promise<PreparationList> {
     return request<PreparationList>("GET", "/center-requests/preparation/list");
+  },
+
+    // ============ VENTES : Bons de livraison ============
+  listDeliveries(query: { client_id?: string; sales_order_id?: string; page?: number; limit?: number } = {}): Promise<Page<DeliveryNote>> {
+    return request<Page<DeliveryNote>>("GET", "/sales/deliveries", { query: { limit: 20, ...query } });
+  },
+  getDelivery(id: string): Promise<DeliveryNote> {
+    return request<DeliveryNote>("GET", `/sales/deliveries/${id}`);
+  },
+  deliverableSale(salesOrderId: string): Promise<DeliverableSale> {
+    return request<DeliverableSale>("GET", `/sales/deliveries/deliverable/${salesOrderId}`);
+  },
+  createDelivery(body: DeliveryNoteInput): Promise<DeliveryNote> {
+    return request<DeliveryNote>("POST", "/sales/deliveries", { body });
+  },
+  deleteDelivery(id: string): Promise<void> {
+    return request<void>("DELETE", `/sales/deliveries/${id}`);
+  },
+  deliveryPdfUrl(id: string): string {
+    return buildUrl(`/sales/deliveries/${id}/pdf`);
+  },
+  settleSale(orderId: string): Promise<SalesPayment> {
+    return request<SalesPayment>("POST", `/sales/orders/${orderId}/settle`, {});
+  },
+
+  priceHint(query: { client_id: string; designation?: string; product_id?: string }): Promise<{ purchase_price: string | null; sale_price: string; last_sale_date: string; source: string } | null> {
+    return request("GET", "/sales/price-hint", { query });
   },
 };
 

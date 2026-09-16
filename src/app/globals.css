@@ -1577,3 +1577,50 @@ tfoot td {
   .topbar, .btn, .page-head .btn { display: none !important; }
   .prep-detail { display: block !important; }
 }
+
+/* ---------- Badges livraison ---------- */
+.dlv-badge {
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 600;
+  padding: 3px 9px; border-radius: 20px;
+}
+.dlv-none { background: #f3f4f6; color: #6b7280; }
+.dlv-partial { background: #fef3c7; color: #92600a; }
+.dlv-full { background: #dcfce7; color: #166534; }
+
+
+/* ---------- Aperçu de document (façon feuille) ---------- */
+.doc-preview {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 28px 32px;
+  max-width: 620px;
+  margin: 0 auto;
+  color: #1f2329;
+}
+.doc-title { font-size: 20px; font-weight: 800; color: var(--accent); letter-spacing: -0.3px; }
+.doc-company { font-size: 15px; font-weight: 700; margin-top: 8px; }
+.doc-company-line { font-size: 10.5px; color: #6b7280; line-height: 1.5; }
+.doc-meta { display: flex; justify-content: space-between; margin-top: 18px; font-size: 12px; }
+.doc-meta > div > div { padding: 2px 0; }
+.doc-table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-top: 18px; }
+.doc-table thead th { background: var(--accent); color: #fff; padding: 7px 8px; text-align: left; font-weight: 700; }
+.doc-table thead th.num { text-align: right; }
+.doc-table tbody td { padding: 6px 8px; border: 0.5px solid var(--border); }
+.doc-table tbody td.num { text-align: right; }
+.doc-totals { margin-top: 4px; margin-left: auto; width: 260px; }
+.doc-total-row { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 8px; }
+.doc-total-strong { font-weight: 700; font-size: 13.5px; border-top: 1.5px solid var(--accent); margin-top: 2px; }
+.doc-total-strong span:last-child { color: var(--accent); }
+.doc-footer-note { margin-top: 20px; font-size: 10.5px; color: #6b7280; font-style: italic; }
+
+/* badges paiement (à côté des badges livraison déjà présents) */
+.pay-badge {
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 600;
+  padding: 3px 9px; border-radius: 20px;
+}
+.pay-none { background: #fee2e2; color: #991b1b; }
+.pay-partial { background: #fef3c7; color: #92600a; }
+.pay-full { background: #dcfce7; color: #166534; }

@@ -1,15 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useAsync } from "@/lib/useAsync";
 import { formatDate, formatFCFA, formatNumber } from "@/lib/format";
-import type {
-  SalesClient,
-  SalesOrder,
-  SalesOrderItemInput,
-  SalesProduct,
-} from "@/lib/types";
+import type { SalesClient, SalesOrder, SalesOrderItemInput } from "@/lib/types";
 import {
   ConfirmDialog,
   EmptyState,
@@ -24,6 +19,27 @@ import { SALES_UNITS, DEFAULT_UNIT, formatQtyUnit } from "@/lib/units";
 
 const LIMIT = 20;
 
+const DELIVERY_LABEL: Record<string, string> = {
+  non_livree: "Non livrée",
+  partiellement_livree: "Partiellement livrée",
+  livree: "Livrée",
+};
+const DELIVERY_CLASS: Record<string, string> = {
+  non_livree: "dlv-none",
+  partiellement_livree: "dlv-partial",
+  livree: "dlv-full",
+};
+const PAY_LABEL: Record<string, string> = {
+  impayee: "Impayée",
+  partiellement_payee: "Partielle",
+  payee: "Payée",
+};
+const PAY_CLASS: Record<string, string> = {
+  impayee: "pay-none",
+  partiellement_payee: "pay-partial",
+  payee: "pay-full",
+};
+
 export default function SalesOrdersPage() {
   const toast = useToast();
   const [search, setSearch] = useState("");
@@ -35,6 +51,8 @@ export default function SalesOrdersPage() {
   const [viewing, setViewing] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<SalesOrder | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [settling, setSettling] = useState<SalesOrder | null>(null);
+  const [settleBusy, setSettleBusy] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -71,6 +89,24 @@ export default function SalesOrdersPage() {
       );
     } finally {
       setDeleteBusy(false);
+    }
+  }
+
+  async function confirmSettle() {
+    if (!settling) return;
+    setSettleBusy(true);
+    try {
+      await api.settleSale(settling.id);
+      toast.push(`Vente ${settling.sale_number} soldée.`, "success");
+      setSettling(null);
+      sales.reload();
+    } catch (e) {
+      toast.push(
+        e instanceof ApiError ? e.detail : "Impossible de solder.",
+        "error",
+      );
+    } finally {
+      setSettleBusy(false);
     }
   }
 
@@ -127,19 +163,21 @@ export default function SalesOrdersPage() {
               <th>Client</th>
               <th className="num">Total vente</th>
               <th className="num">Marge</th>
+              <th>Paiement</th>
+              <th>Livraison</th>
               <th className="actions">Actions</th>
             </tr>
           </thead>
           <tbody>
             {sales.loading && !sales.data ? (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={8}>
                   <Loading />
                 </td>
               </tr>
             ) : sales.data && sales.data.items.length === 0 ? (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={8}>
                   <EmptyState
                     message="Aucune vente"
                     hint="Enregistrez votre première vente."
@@ -163,6 +201,26 @@ export default function SalesOrdersPage() {
                   >
                     {formatFCFA(s.total_margin)}
                   </td>
+                  <td>
+                    <span
+                      className={
+                        "pay-badge " +
+                        (PAY_CLASS[s.payment_status] || "pay-none")
+                      }
+                    >
+                      {PAY_LABEL[s.payment_status] || "—"}
+                    </span>
+                  </td>
+                  <td>
+                    <span
+                      className={
+                        "dlv-badge " +
+                        (DELIVERY_CLASS[s.delivery_status] || "dlv-none")
+                      }
+                    >
+                      {DELIVERY_LABEL[s.delivery_status] || "—"}
+                    </span>
+                  </td>
                   <td className="actions" onClick={(e) => e.stopPropagation()}>
                     <button
                       className="btn-link"
@@ -170,6 +228,14 @@ export default function SalesOrdersPage() {
                     >
                       Détails
                     </button>
+                    {s.payment_status !== "payee" && (
+                      <button
+                        className="btn-link"
+                        onClick={() => setSettling(s)}
+                      >
+                        Solder
+                      </button>
+                    )}
                     <button
                       className="btn-link danger"
                       onClick={() => setDeleting(s)}
@@ -215,6 +281,16 @@ export default function SalesOrdersPage() {
           onConfirm={confirmDelete}
           onCancel={() => setDeleting(null)}
           busy={deleteBusy}
+        />
+      )}
+
+      {settling && (
+        <ConfirmDialog
+          title="Solder la vente"
+          message={`Enregistrer un paiement de ${formatFCFA(settling.amount_due)} pour solder ${settling.sale_number} ?`}
+          onConfirm={confirmSettle}
+          onCancel={() => setSettling(null)}
+          busy={settleBusy}
         />
       )}
     </>
@@ -338,6 +414,7 @@ type SaleLine = {
   unit: string;
   purchase_price: string;
   sale_price: string;
+  add_to_catalog: boolean;
 };
 let saleLineCounter = 0;
 const newSaleLine = (): SaleLine => ({
@@ -348,6 +425,7 @@ const newSaleLine = (): SaleLine => ({
   unit: DEFAULT_UNIT,
   purchase_price: "",
   sale_price: "",
+  add_to_catalog: true,
 });
 
 function SaleForm({
@@ -374,22 +452,35 @@ function SaleForm({
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   }
 
-  // Quand on choisit un produit : pré-remplit désignation + prix depuis le catalogue (ajustables).
-  function pickProduct(key: number, p: SalesProduct | null) {
-    if (!p) {
-      updateLine(key, { product_id: null });
-      return;
+  // Cherche le dernier prix pratiqué à ce client pour cet article.
+  async function fetchClientPrice(
+    key: number,
+    designation: string,
+    productId: string | null,
+  ) {
+    if (!clientId || !designation.trim()) return;
+    try {
+      const hint = await api.priceHint({
+        client_id: clientId,
+        designation: productId ? undefined : designation,
+        product_id: productId || undefined,
+      });
+      if (hint) {
+        setLines((ls) =>
+          ls.map((l) => {
+            if (l.key !== key) return l;
+            // On ne pré-remplit que si les champs sont encore vides (ne pas écraser une saisie).
+            return {
+              ...l,
+              purchase_price: l.purchase_price || (hint.purchase_price ?? ""),
+              sale_price: l.sale_price || hint.sale_price,
+            };
+          }),
+        );
+      }
+    } catch {
+      // silencieux : pas de prix trouvé, on laisse vide
     }
-    updateLine(key, {
-      product_id: p.id,
-      designation: p.designation,
-      purchase_price:
-        p.default_purchase_price != null
-          ? String(p.default_purchase_price)
-          : "",
-      sale_price:
-        p.default_sale_price != null ? String(p.default_sale_price) : "",
-    });
   }
 
   const totals = useMemo(() => {
@@ -438,9 +529,10 @@ function SaleForm({
       product_id: l.product_id,
       designation: l.designation.trim(),
       quantity: Number(l.quantity),
-      unit: l.unit,
+      unit: l.unit || DEFAULT_UNIT,
       purchase_price: String(Number(l.purchase_price)),
       sale_price: String(Number(l.sale_price)),
+      add_to_catalog: !l.product_id && l.add_to_catalog, // seulement pour lignes libres
     }));
 
     setBusy(true);
@@ -458,6 +550,24 @@ function SaleForm({
       setBusy(false);
     }
   }
+
+  // Déclenche la recherche de prix client quand une désignation se stabilise (debounce).
+  // On mémorise la dernière désignation interrogée par ligne pour ne pas re-fetch inutilement.
+  const lastQueried = useRef<Record<number, string>>({});
+
+  useEffect(() => {
+    if (!clientId) return;
+    const t = setTimeout(() => {
+      for (const l of lines) {
+        const key = `${l.product_id ?? "free"}:${l.designation.trim().toLowerCase()}`;
+        if (!l.designation.trim()) continue;
+        if (lastQueried.current[l.key] === key) continue; // déjà interrogé
+        lastQueried.current[l.key] = key;
+        fetchClientPrice(l.key, l.designation, l.product_id);
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [lines, clientId]);
 
   return (
     <Modal
@@ -544,18 +654,19 @@ function SaleForm({
                     <ProductCombobox
                       products={products.data?.items ?? []}
                       designation={l.designation}
-                      onChangeText={(text) =>
-                        // frappe libre : on garde le texte, et on détache le produit lié
+                      onChangeText={(text) => {
                         updateLine(l.key, {
                           designation: text,
                           product_id: null,
-                        })
-                      }
-                      onPickProduct={(p) =>
+                          purchase_price: "",
+                          sale_price: "",
+                        });
+                      }}
+                      onPickProduct={(p) => {
                         updateLine(l.key, {
                           product_id: p.id,
                           designation: p.designation,
-                          unit: p.default_unit || DEFAULT_UNIT, // ← pré-remplit
+                          unit: p.default_unit || DEFAULT_UNIT,
                           purchase_price:
                             p.default_purchase_price != null
                               ? String(p.default_purchase_price)
@@ -564,10 +675,33 @@ function SaleForm({
                             p.default_sale_price != null
                               ? String(p.default_sale_price)
                               : "",
-                        })
-                      }
+                        });
+                      }}
                       placeholder="Produit ou désignation libre…"
                     />
+                    {!l.product_id && l.designation.trim() && (
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                          fontSize: 11,
+                          marginTop: 4,
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={l.add_to_catalog}
+                          onChange={(e) =>
+                            updateLine(l.key, {
+                              add_to_catalog: e.target.checked,
+                            })
+                          }
+                        />
+                        Ajouter au catalogue
+                      </label>
+                    )}
                   </td>
                   <td>
                     <input

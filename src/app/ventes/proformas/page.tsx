@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { api, ApiError, downloadWithAuth } from "@/lib/api";
 import { useAsync } from "@/lib/useAsync";
 import { formatDate, formatFCFA, formatNumber } from "@/lib/format";
@@ -22,6 +22,11 @@ import {
   useToast,
 } from "@/components/ui";
 import { ProductCombobox } from "@/components/ProductCombobox";
+import {
+  DocumentPreview,
+  type DocumentModel,
+} from "@/components/DocumentPreview";
+import { VAT_RATE } from "@/lib/company";
 import { SALES_UNITS, DEFAULT_UNIT, formatQtyUnit } from "@/lib/units";
 
 const LIMIT = 20;
@@ -30,6 +35,7 @@ const STATUS_LABEL: Record<ProformaStatus, string> = {
   en_cours: "En cours",
   convertie: "Convertie",
 };
+
 const STATUS_CLASS: Record<ProformaStatus, string> = {
   en_cours: "pf-encours",
   convertie: "pf-convertie",
@@ -273,6 +279,44 @@ function ProformaDetail({
   const [converting, setConverting] = useState(false);
   const data = pf.data;
 
+  const [preview, setPreview] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  function buildModel(): DocumentModel {
+    const ht = Number(data!.total);
+    const tva = Math.round(ht * VAT_RATE);
+    return {
+      title: "FACTURE PROFORMA",
+      number: data!.proforma_number,
+      date: data!.proforma_date,
+      client_name: data!.client_name,
+      columns: { qty: "Qté", unit_price: "Prix unitaire" },
+      lines: data!.items.map((it) => ({
+        designation: it.designation,
+        quantity: it.quantity,
+        unit_price: it.sale_price,
+        total: it.line_total,
+      })),
+      totals: { ht: String(ht), tva: String(tva), ttc: String(ht + tva) },
+      footer_note:
+        "Ce document est une facture proforma, sans valeur comptable.",
+    };
+  }
+
+  async function downloadPdf() {
+    setDownloading(true);
+    try {
+      await downloadWithAuth(
+        api.proformaPdfUrl(data!.id),
+        `proforma_${data!.proforma_number}.pdf`,
+      );
+    } catch {
+      toast.push("Téléchargement impossible.", "error");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <>
       <Modal
@@ -282,18 +326,8 @@ function ProformaDetail({
         footer={
           <>
             {data && (
-              <button
-                className="btn"
-                onClick={() =>
-                  downloadWithAuth(
-                    api.proformaPdfUrl(data.id),
-                    `proforma_${data.proforma_number}.pdf`,
-                  ).catch(() =>
-                    toast.push("Téléchargement impossible.", "error"),
-                  )
-                }
-              >
-                Télécharger le PDF
+              <button className="btn" onClick={() => setPreview(true)}>
+                Aperçu &amp; PDF
               </button>
             )}
             {data && data.status === "en_cours" && (
@@ -377,9 +411,7 @@ function ProformaDetail({
                   {data.items.map((it) => (
                     <tr key={it.id}>
                       <td>{it.designation}</td>
-                      <td className="num">
-                        {formatQtyUnit(it.quantity, it.unit)}
-                      </td>
+                      <td className="num">{formatNumber(it.quantity)}</td>
                       <td className="num">{formatFCFA(it.sale_price)}</td>
                       <td className="num">{formatFCFA(it.line_total)}</td>
                     </tr>
@@ -407,6 +439,14 @@ function ProformaDetail({
             onChanged();
             toast.push(`Vente ${saleNum} créée depuis la proforma.`, "success");
           }}
+        />
+      )}
+      {preview && data && (
+        <DocumentPreview
+          model={buildModel()}
+          onClose={() => setPreview(false)}
+          onDownload={downloadPdf}
+          downloading={downloading}
         />
       )}
     </>
@@ -614,6 +654,7 @@ type PfLine = {
   quantity: string;
   unit: string;
   sale_price: string;
+  add_to_catalog: boolean;
 };
 let pfLineCounter = 0;
 const newPfLine = (): PfLine => ({
@@ -623,6 +664,7 @@ const newPfLine = (): PfLine => ({
   quantity: "1",
   unit: DEFAULT_UNIT,
   sale_price: "",
+  add_to_catalog: false,
 });
 
 function ProformaForm({
@@ -685,6 +727,7 @@ function ProformaForm({
       quantity: Number(l.quantity),
       unit: l.unit,
       sale_price: String(Number(l.sale_price)),
+      add_to_catalog: !l.product_id && l.add_to_catalog,
     }));
 
     setBusy(true);
@@ -702,6 +745,49 @@ function ProformaForm({
       setBusy(false);
     }
   }
+
+  // Cherche le dernier prix de vente pratiqué à ce client pour cet article.
+  async function fetchClientPrice(
+    key: number,
+    designation: string,
+    productId: string | null,
+  ) {
+    if (!clientId || !designation.trim()) return;
+    try {
+      const hint = await api.priceHint({
+        client_id: clientId,
+        designation: productId ? undefined : designation,
+        product_id: productId || undefined,
+      });
+      if (hint) {
+        setLines((ls) =>
+          ls.map((l) => {
+            if (l.key !== key) return l;
+            // ne pas écraser une saisie manuelle
+            return { ...l, sale_price: l.sale_price || hint.sale_price };
+          }),
+        );
+      }
+    } catch {
+      // silencieux : pas de prix trouvé
+    }
+  }
+
+  const lastQueried = useRef<Record<number, string>>({});
+
+  useEffect(() => {
+    if (!clientId) return;
+    const t = setTimeout(() => {
+      for (const l of lines) {
+        if (!l.designation.trim()) continue;
+        const key = `${l.product_id ?? "free"}:${l.designation.trim().toLowerCase()}`;
+        if (lastQueried.current[l.key] === key) continue;
+        lastQueried.current[l.key] = key;
+        fetchClientPrice(l.key, l.designation, l.product_id);
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [lines, clientId]);
 
   return (
     <Modal
@@ -787,6 +873,7 @@ function ProformaForm({
                         updateLine(l.key, {
                           designation: text,
                           product_id: null,
+                          sale_price: "",
                         })
                       }
                       onPickProduct={(p) =>
@@ -802,6 +889,29 @@ function ProformaForm({
                       }
                       placeholder="Produit ou désignation libre…"
                     />
+                    {!l.product_id && l.designation.trim() && (
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                          fontSize: 11,
+                          marginTop: 4,
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={l.add_to_catalog}
+                          onChange={(e) =>
+                            updateLine(l.key, {
+                              add_to_catalog: e.target.checked,
+                            })
+                          }
+                        />
+                        Ajouter au catalogue
+                      </label>
+                    )}
                   </td>
                   <td>
                     <input
