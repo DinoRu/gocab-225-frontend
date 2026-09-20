@@ -20,6 +20,10 @@ import {
   Pagination,
   useToast,
 } from "@/components/ui";
+import {
+  DocumentPreview,
+  type DocumentModel,
+} from "@/components/DocumentPreview";
 import { formatQtyUnit } from "@/lib/units";
 
 const LIMIT = 20;
@@ -224,6 +228,41 @@ function DeliveryDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const dn = useAsync(() => api.getDelivery(id), [id]);
   const data = dn.data;
 
+  const [preview, setPreview] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  function buildModel(): DocumentModel {
+    return {
+      title: "BON DE LIVRAISON",
+      number: data!.delivery_number,
+      date: data!.delivery_date,
+      client_name: data!.client_name,
+      meta: [{ label: "Vente liée", value: data!.sale_number }],
+      columns: { qty: "Qté livrée", unit_price: "Prix unitaire" },
+      lines: data!.items.map((it) => ({
+        designation: it.designation,
+        quantity: it.quantity,
+        unit_price: it.sale_price,
+        total: it.line_total,
+      })),
+      totals: { simple: data!.total }, // un seul total, pas de TVA
+    };
+  }
+
+  async function downloadPdf() {
+    setDownloading(true);
+    try {
+      await downloadWithAuth(
+        api.deliveryPdfUrl(data!.id),
+        `BL_${data!.delivery_number}.pdf`,
+      );
+    } catch {
+      toast.push("Téléchargement impossible.", "error");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <Modal
       title={
@@ -234,16 +273,8 @@ function DeliveryDetail({ id, onClose }: { id: string; onClose: () => void }) {
       footer={
         <>
           {data && (
-            <button
-              className="btn"
-              onClick={() =>
-                downloadWithAuth(
-                  api.deliveryPdfUrl(data.id),
-                  `BL_${data.delivery_number}.pdf`,
-                ).catch(() => toast.push("Téléchargement impossible.", "error"))
-              }
-            >
-              Télécharger le PDF
+            <button className="btn" onClick={() => setPreview(true)}>
+              Aperçu &amp; PDF
             </button>
           )}
           <button className="btn btn-primary" onClick={onClose}>
@@ -297,6 +328,14 @@ function DeliveryDetail({ id, onClose }: { id: string; onClose: () => void }) {
             <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
               <strong>Notes :</strong> {data.notes}
             </p>
+          )}
+          {preview && data && (
+            <DocumentPreview
+              model={buildModel()}
+              onClose={() => setPreview(false)}
+              onDownload={downloadPdf}
+              downloading={downloading}
+            />
           )}
         </>
       )}

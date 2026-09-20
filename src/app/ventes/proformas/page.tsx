@@ -246,6 +246,7 @@ export default function ProformasPage() {
       {viewing && (
         <ProformaDetail
           id={viewing}
+          clients={clients.data?.items ?? []}
           onClose={() => setViewing(null)}
           onChanged={() => proformas.reload()}
         />
@@ -267,10 +268,12 @@ export default function ProformasPage() {
 // ---------- Détail d'une proforma ----------
 function ProformaDetail({
   id,
+  clients,
   onClose,
   onChanged,
 }: {
   id: string;
+  clients: SalesClient[];
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -278,7 +281,7 @@ function ProformaDetail({
   const pf = useAsync(() => api.getSalesProforma(id), [id]);
   const [converting, setConverting] = useState(false);
   const data = pf.data;
-
+  const [editing, setEditing] = useState(false);
   const [preview, setPreview] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
@@ -328,6 +331,11 @@ function ProformaDetail({
             {data && (
               <button className="btn" onClick={() => setPreview(true)}>
                 Aperçu &amp; PDF
+              </button>
+            )}
+            {data && data.status === "en_cours" && (
+              <button className="btn" onClick={() => setEditing(true)}>
+                Modifier
               </button>
             )}
             {data && data.status === "en_cours" && (
@@ -428,6 +436,19 @@ function ProformaDetail({
           </>
         )}
       </Modal>
+      {editing && data && (
+        <ProformaForm
+          proforma={data}
+          clients={clients}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            pf.reload();
+            onChanged();
+            toast.push("Proforma modifiée.", "success");
+          }}
+        />
+      )}
 
       {converting && data && (
         <ConvertForm
@@ -668,18 +689,34 @@ const newPfLine = (): PfLine => ({
 });
 
 function ProformaForm({
+  proforma,
   clients,
   onClose,
   onSaved,
 }: {
+  proforma?: SalesProforma | null;
   clients: SalesClient[];
   onClose: () => void;
   onSaved: (num: string) => void;
 }) {
-  const [clientId, setClientId] = useState("");
-  const [pfDate, setPfDate] = useState(new Date().toISOString().slice(0, 10));
-  const [notes, setNotes] = useState("");
-  const [lines, setLines] = useState<PfLine[]>([newPfLine()]);
+  const [clientId, setClientId] = useState(proforma?.client_id ?? "");
+  const [pfDate, setPfDate] = useState(
+    proforma?.proforma_date ?? new Date().toISOString().slice(0, 10),
+  );
+  const [notes, setNotes] = useState(proforma?.notes ?? "");
+  const [lines, setLines] = useState<PfLine[]>(
+    proforma
+      ? proforma.items.map((it) => ({
+          key: ++pfLineCounter,
+          product_id: it.product_id,
+          designation: it.designation,
+          quantity: String(it.quantity),
+          unit: it.unit,
+          sale_price: it.sale_price,
+          add_to_catalog: false, // article déjà existant, pas besoin de re-cataloguer
+        }))
+      : [newPfLine()],
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -732,15 +769,25 @@ function ProformaForm({
 
     setBusy(true);
     try {
-      const created = await api.createSalesProforma({
-        client_id: clientId,
-        proforma_date: pfDate,
-        notes: notes.trim() || null,
-        items,
-      });
-      onSaved(created.proforma_number);
+      let result: SalesProforma;
+      if (proforma) {
+        result = await api.updateSalesProforma(proforma.id, {
+          client_id: clientId,
+          proforma_date: pfDate,
+          notes: notes.trim() || null,
+          items,
+        });
+      } else {
+        result = await api.createSalesProforma({
+          client_id: clientId,
+          proforma_date: pfDate,
+          notes: notes.trim() || null,
+          items,
+        });
+      }
+      onSaved(result.proforma_number);
     } catch (e) {
-      setError(e instanceof ApiError ? e.detail : "Création impossible.");
+      setError(e instanceof ApiError ? e.detail : "Enregistrement impossible.");
     } finally {
       setBusy(false);
     }
@@ -791,7 +838,11 @@ function ProformaForm({
 
   return (
     <Modal
-      title="Nouvelle proforma"
+      title={
+        proforma
+          ? `Modifier la proforma ${proforma.proforma_number}`
+          : "Nouvelle proforma"
+      }
       onClose={onClose}
       wide
       footer={
@@ -800,7 +851,11 @@ function ProformaForm({
             Annuler
           </button>
           <button className="btn btn-primary" onClick={submit} disabled={busy}>
-            {busy ? "Création…" : "Créer la proforma"}
+            {busy
+              ? "Enregistrement…"
+              : proforma
+                ? "Enregistrer les modifications"
+                : "Créer la proforma"}
           </button>
         </>
       }
