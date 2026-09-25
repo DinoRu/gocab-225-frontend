@@ -840,3 +840,109 @@ export interface DeliverableSale {
   client_name: string;
   lines: DeliverableLine[];
 }
+
+
+// ===================== MODULE TARIFS FOURNISSEURS =====================
+export interface TariffSupplier {
+  id: string;
+  name: string;
+  phone: string | null;
+  contact_name: string | null;
+  notes: string | null;
+  created_at: string;
+}
+export interface TariffSupplierInput {
+  name: string;
+  phone?: string | null;
+  contact_name?: string | null;
+  notes?: string | null;
+}
+
+export interface TariffArticle {
+  id: string;
+  reference: string | null;
+  designation: string;
+  notes: string | null;
+  supplier_count: number;
+  best_price: string | null;
+  created_at: string;
+}
+export interface TariffArticleInput {
+  reference?: string | null;
+  designation: string;
+  notes?: string | null;
+}
+
+export interface TariffPrice {
+  id: string;
+  article_id: string;
+  supplier_id: string;
+  supplier_name: string;
+  price: string;
+  effective_date: string;
+  notes: string | null;
+  created_at: string;
+}
+export interface TariffPriceInput {
+  article_id: string;
+  supplier_id: string;
+  price: string;
+  effective_date: string;
+  notes?: string | null;
+}
+
+// Vue par article
+export interface SupplierPriceRow {
+  supplier_id: string;
+  supplier_name: string;
+  last_price: string;
+  last_date: string;
+  history: TariffPrice[];
+}
+export interface ArticlePricesView {
+  article_id: string;
+  designation: string;
+  reference: string | null;
+  suppliers: SupplierPriceRow[];
+}
+
+// Vue par fournisseur
+export interface ArticlePriceRow {
+  article_id: string;
+  designation: string;
+  reference: string | null;
+  last_price: string;
+  last_date: string;
+}
+export interface SupplierPricesView {
+  supplier_id: string;
+  supplier_name: string;
+  articles: ArticlePriceRow[];
+}
+
+export interface SalesOrderItem {
+  id: string;
+  product_id: string | null;
+  designation: string;
+  quantity: number;
+  unit: string;
+  purchase_price: string;
+  sale_price: string;
+  line_total: string;
+  line_margin: string;
+  delivered_quantity: number;      // ← ajoute
+}
+
+export interface SaleLineEditInput {
+  id?: string | null;              // présent = ligne existante ; absent = nouvelle
+  product_id?: string | null;
+  designation: string;
+  quantity: number;
+  unit: string;
+  purchase_price: string;
+  sale_price: string;
+}
+export interface SaleLinesUpdateInput {
+  items: SaleLineEditInput[];
+  returned_item_ids: string[];
+}

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, downloadWithAuth } from "@/lib/api";
 import { useAsync } from "@/lib/useAsync";
 import { formatDate, formatFCFA } from "@/lib/format";
 import { ErrorBox, Loading, EmptyState } from "@/components/ui";
@@ -33,6 +33,21 @@ export default function ClientLedgerPage() {
             incluse)
           </div>
         </div>
+        {data && (
+          <button
+            className="btn"
+            onClick={() =>
+              downloadWithAuth(
+                api.clientLedgerPdfUrl(clientId),
+                `relevé_${data.client_name.replace(/ /g, "_")}.pdf`,
+              ).catch(() => {
+                /* toast si tu en as un ici */
+              })
+            }
+          >
+            Imprimer le relevé
+          </button>
+        )}
       </div>
 
       {ledger.loading && <Loading />}

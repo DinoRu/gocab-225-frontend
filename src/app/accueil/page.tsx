@@ -105,6 +105,31 @@ export default function AccueilPage() {
             </span>
           </Link>
         )}
+
+        {isAdmin && (
+          <Link href="/tarifs" className="home-tile">
+            <span className="home-tile-icon tarifs">
+              <svg
+                width="30"
+                height="30"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="12" y1="1" x2="12" y2="23" />
+                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                <path d="M3 6h4M3 18h4" />
+              </svg>
+            </span>
+            <span className="home-tile-title">Tarifs fournisseurs</span>
+            <span className="home-tile-sub">
+              Prix d'achat par fournisseur, comparaison, historique
+            </span>
+          </Link>
+        )}
       </div>
     </div>
   );

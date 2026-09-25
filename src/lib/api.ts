@@ -63,6 +63,15 @@ import type {
   DeliveryNote,
   DeliverableSale,
   DeliveryNoteInput,
+  TariffPriceInput,
+  TariffPrice,
+  ArticlePricesView,
+  TariffArticle,
+  TariffArticleInput,
+  SupplierPricesView,
+  TariffSupplier,
+  TariffSupplierInput,
+  SaleLinesUpdateInput,
 } from "./types";
 
 const BASE_URL =
@@ -814,6 +823,60 @@ export const api = {
   priceHint(query: { client_id: string; designation?: string; product_id?: string }): Promise<{ purchase_price: string | null; sale_price: string; last_sale_date: string; source: string } | null> {
     return request("GET", "/sales/price-hint", { query });
   },
+
+    // ============ TARIFS : Fournisseurs ============
+  listTariffSuppliers(query: { search?: string; page?: number; limit?: number } = {}): Promise<Page<TariffSupplier>> {
+    return request<Page<TariffSupplier>>("GET", "/tariffs/suppliers", { query: { limit: 100, ...query } });
+  },
+  createTariffSupplier(body: TariffSupplierInput): Promise<TariffSupplier> {
+    return request<TariffSupplier>("POST", "/tariffs/suppliers", { body });
+  },
+  updateTariffSupplier(id: string, body: Partial<TariffSupplierInput>): Promise<TariffSupplier> {
+    return request<TariffSupplier>("PATCH", `/tariffs/suppliers/${id}`, { body });
+  },
+  deleteTariffSupplier(id: string): Promise<void> {
+    return request<void>("DELETE", `/tariffs/suppliers/${id}`);
+  },
+  supplierPrices(id: string): Promise<SupplierPricesView> {
+    return request<SupplierPricesView>("GET", `/tariffs/suppliers/${id}/prices`);
+  },
+
+  // ============ TARIFS : Articles ============
+  listTariffArticles(query: { search?: string; page?: number; limit?: number } = {}): Promise<Page<TariffArticle>> {
+    return request<Page<TariffArticle>>("GET", "/tariffs/articles", { query: { limit: 50, ...query } });
+  },
+  createTariffArticle(body: TariffArticleInput): Promise<TariffArticle> {
+    return request<TariffArticle>("POST", "/tariffs/articles", { body });
+  },
+  updateTariffArticle(id: string, body: Partial<TariffArticleInput>): Promise<TariffArticle> {
+    return request<TariffArticle>("PATCH", `/tariffs/articles/${id}`, { body });
+  },
+  deleteTariffArticle(id: string): Promise<void> {
+    return request<void>("DELETE", `/tariffs/articles/${id}`);
+  },
+  articlePrices(id: string): Promise<ArticlePricesView> {
+    return request<ArticlePricesView>("GET", `/tariffs/articles/${id}/prices`);
+  },
+
+  // ============ TARIFS : Prix ============
+  createTariffPrice(body: TariffPriceInput): Promise<TariffPrice> {
+    return request<TariffPrice>("POST", "/tariffs/prices", { body });
+  },
+  deleteTariffPrice(id: string): Promise<void> {
+    return request<void>("DELETE", `/tariffs/prices/${id}`);
+  },
+
+  clientLedgerPdfUrl(clientId: string): string {
+    return buildUrl(`/sales/clients/${clientId}/ledger/pdf`);
+  },
+
+  closeSaleToDelivered(orderId: string): Promise<SalesOrder> {
+    return request<SalesOrder>("POST", `/sales/orders/${orderId}/close-to-delivered`, {});
+  },
+
+  updateSaleLines(orderId: string, body: SaleLinesUpdateInput): Promise<SalesOrder> {
+    return request<SalesOrder>("PATCH", `/sales/orders/${orderId}/lines`, { body });
+  },
 };
 
 
@@ -860,3 +923,4 @@ export async function downloadWithAuth(url: string, filename: string, _retry = f
   a.remove();
   URL.revokeObjectURL(objectUrl);
 }
+

@@ -4,7 +4,12 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useAsync } from "@/lib/useAsync";
 import { formatDate, formatFCFA, formatNumber } from "@/lib/format";
-import type { SalesClient, SalesOrder, SalesOrderItemInput } from "@/lib/types";
+import type {
+  SaleLinesUpdateInput,
+  SalesClient,
+  SalesOrder,
+  SalesOrderItemInput,
+} from "@/lib/types";
 import {
   ConfirmDialog,
   EmptyState,
@@ -15,7 +20,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { ProductCombobox } from "@/components/ProductCombobox";
-import { SALES_UNITS, DEFAULT_UNIT, formatQtyUnit } from "@/lib/units";
+import { SALES_UNITS, DEFAULT_UNIT } from "@/lib/units";
 
 const LIMIT = 20;
 
@@ -53,6 +58,27 @@ export default function SalesOrdersPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [settling, setSettling] = useState<SalesOrder | null>(null);
   const [settleBusy, setSettleBusy] = useState(false);
+
+  const [closing, setClosing] = useState<SalesOrder | null>(null);
+  const [closeBusy, setCloseBusy] = useState(false);
+
+  async function confirmClose() {
+    if (!closing) return;
+    setCloseBusy(true);
+    try {
+      await api.closeSaleToDelivered(closing.id);
+      toast.push(`Vente ${closing.sale_number} clôturée au livré.`, "success");
+      setClosing(null);
+      sales.reload();
+    } catch (e) {
+      toast.push(
+        e instanceof ApiError ? e.detail : "Clôture impossible.",
+        "error",
+      );
+    } finally {
+      setCloseBusy(false);
+    }
+  }
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -161,7 +187,7 @@ export default function SalesOrdersPage() {
               <th>N° vente</th>
               <th>Date</th>
               <th>Client</th>
-              <th className="num">Total vente</th>
+              <th className="num">Total TTC</th>
               <th className="num">Marge</th>
               <th>Paiement</th>
               <th>Livraison</th>
@@ -228,6 +254,14 @@ export default function SalesOrdersPage() {
                     >
                       Détails
                     </button>
+                    {s.delivery_status === "partiellement_livree" && (
+                      <button
+                        className="btn-link"
+                        onClick={() => setClosing(s)}
+                      >
+                        Clôturer au livré
+                      </button>
+                    )}
                     {s.payment_status !== "payee" && (
                       <button
                         className="btn-link"
@@ -293,6 +327,16 @@ export default function SalesOrdersPage() {
           busy={settleBusy}
         />
       )}
+
+      {closing && (
+        <ConfirmDialog
+          title="Clôturer au livré"
+          message={`Ramener la vente ${closing.sale_number} aux quantités réellement livrées ? Les articles non livrés seront retirés, et le client ne devra que ce qu'il a reçu.`}
+          onConfirm={confirmClose}
+          onCancel={() => setClosing(null)}
+          busy={closeBusy}
+        />
+      )}
     </>
   );
 }
@@ -300,94 +344,112 @@ export default function SalesOrdersPage() {
 // ---------- Détail d'une vente ----------
 function SaleDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const sale = useAsync(() => api.getSalesOrder(id), [id]);
+  const [editing, setEditing] = useState(false);
   const data = sale.data;
 
   return (
-    <Modal
-      title={data ? `Vente ${data.sale_number}` : "Vente"}
-      onClose={onClose}
-      wide
-      footer={
-        <button className="btn btn-primary" onClick={onClose}>
-          Fermer
-        </button>
-      }
-    >
-      {sale.loading && <Loading />}
-      {sale.error && <ErrorBox message={sale.error} />}
-      {data && (
-        <>
-          <div
-            style={{
-              display: "flex",
-              gap: 24,
-              marginBottom: 14,
-              flexWrap: "wrap",
-            }}
-          >
-            <Field label="Client" value={data.client_name} />
-            <Field label="Date" value={formatDate(data.sale_date)} />
-          </div>
+    <>
+      <Modal
+        title={data ? `Vente ${data.sale_number}` : "Vente"}
+        onClose={onClose}
+        wide
+        footer={
+          <>
+            {data && (
+              <button className="btn" onClick={() => setEditing(true)}>
+                Modifier les lignes
+              </button>
+            )}
+            <button className="btn btn-primary" onClick={onClose}>
+              Fermer
+            </button>
+          </>
+        }
+      >
+        {sale.loading && <Loading />}
+        {sale.error && <ErrorBox message={sale.error} />}
+        {data && (
+          <>
+            <div
+              style={{
+                display: "flex",
+                gap: 24,
+                marginBottom: 14,
+                flexWrap: "wrap",
+              }}
+            >
+              <Field label="Client" value={data.client_name} />
+              <Field label="Date" value={formatDate(data.sale_date)} />
+            </div>
 
-          {/* Récap financier : HT → TVA → TTC, + marge */}
-          <div className="sale-totals-box">
-            <div className="sale-totals-row">
-              <span>Total HT</span>
-              <span>{formatFCFA(data.total_sale)}</span>
+            {/* Récap financier : HT → TVA → TTC, + marge */}
+            <div className="sale-totals-box">
+              <div className="sale-totals-row">
+                <span>Total HT</span>
+                <span>{formatFCFA(data.total_sale)}</span>
+              </div>
+              <div className="sale-totals-row">
+                <span>TVA (18%)</span>
+                <span>{formatFCFA(data.vat_amount)}</span>
+              </div>
+              <div className="sale-totals-row sale-totals-ttc">
+                <span>Total TTC (dû par le client)</span>
+                <span>{formatFCFA(data.total_ttc)}</span>
+              </div>
+              <div className="sale-totals-row sale-totals-margin">
+                <span>Marge (sur HT)</span>
+                <span>{formatFCFA(data.total_margin)}</span>
+              </div>
             </div>
-            <div className="sale-totals-row">
-              <span>TVA (18%)</span>
-              <span>{formatFCFA(data.vat_amount)}</span>
-            </div>
-            <div className="sale-totals-row sale-totals-ttc">
-              <span>Total TTC (dû par le client)</span>
-              <span>{formatFCFA(data.total_ttc)}</span>
-            </div>
-            <div className="sale-totals-row sale-totals-margin">
-              <span>Marge (sur HT)</span>
-              <span>{formatFCFA(data.total_margin)}</span>
-            </div>
-          </div>
 
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Désignation</th>
-                  <th className="num">Qté</th>
-                  <th className="num">Prix achat</th>
-                  <th className="num">Prix vente</th>
-                  <th className="num">Total</th>
-                  <th className="num">Marge</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.map((it) => (
-                  <tr key={it.id}>
-                    <td>{it.designation}</td>
-                    <td className="num">
-                      {formatQtyUnit(it.quantity, it.unit)}
-                    </td>
-                    <td className="num">{formatFCFA(it.purchase_price)}</td>
-                    <td className="num">{formatFCFA(it.sale_price)}</td>
-                    <td className="num">{formatFCFA(it.line_total)}</td>
-                    <td className="num" style={{ color: "var(--success)" }}>
-                      {formatFCFA(it.line_margin)}
-                    </td>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Désignation</th>
+                    <th className="num">Qté</th>
+                    <th className="num">Prix achat</th>
+                    <th className="num">Prix vente</th>
+                    <th className="num">Total</th>
+                    <th className="num">Marge</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {data.items.map((it) => (
+                    <tr key={it.id}>
+                      <td>{it.designation}</td>
+                      <td className="num">{formatNumber(it.quantity)}</td>
+                      <td className="num">{formatFCFA(it.purchase_price)}</td>
+                      <td className="num">{formatFCFA(it.sale_price)}</td>
+                      <td className="num">{formatFCFA(it.line_total)}</td>
+                      <td className="num" style={{ color: "var(--success)" }}>
+                        {formatFCFA(it.line_margin)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-          {data.notes && (
-            <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
-              <strong>Notes :</strong> {data.notes}
-            </p>
-          )}
-        </>
+            {data.notes && (
+              <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
+                <strong>Notes :</strong> {data.notes}
+              </p>
+            )}
+          </>
+        )}
+      </Modal>
+      {editing && data && (
+        <SaleLinesEditor
+          sale={data}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            sale.reload();
+          }}
+        />
       )}
-    </Modal>
+    </>
   );
 }
 
@@ -417,6 +479,7 @@ type SaleLine = {
   add_to_catalog: boolean;
 };
 let saleLineCounter = 0;
+
 const newSaleLine = (): SaleLine => ({
   key: ++saleLineCounter,
   product_id: null,
@@ -427,6 +490,297 @@ const newSaleLine = (): SaleLine => ({
   sale_price: "",
   add_to_catalog: true,
 });
+
+// ---------- Éditeur des lignes d'une vente ----------
+type EditLine = {
+  key: number;
+  id: string | null; // null = nouvelle ligne
+  product_id: string | null;
+  designation: string;
+  quantity: string;
+  unit: string;
+  purchase_price: string;
+  sale_price: string;
+  delivered: number; // quantité déjà livrée (0 = modifiable/retirable librement)
+};
+let editLineCounter = 0;
+
+function SaleLinesEditor({
+  sale,
+  onClose,
+  onSaved,
+}: {
+  sale: SalesOrder;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const toast = useToast();
+  const [lines, setLines] = useState<EditLine[]>(
+    sale.items.map((it) => ({
+      key: ++editLineCounter,
+      id: it.id,
+      product_id: it.product_id,
+      designation: it.designation,
+      quantity: String(it.quantity),
+      unit: it.unit,
+      purchase_price: it.purchase_price,
+      sale_price: it.sale_price,
+      delivered: it.delivered_quantity,
+    })),
+  );
+  // ids de lignes livrées retirées via un retour confirmé
+  const [returnedIds, setReturnedIds] = useState<string[]>([]);
+  // ligne en cours de retour (pour la confirmation)
+  const [returning, setReturning] = useState<EditLine | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function updateLine(key: number, patch: Partial<EditLine>) {
+    setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  }
+
+  function removeLine(l: EditLine) {
+    if (l.delivered > 0 && l.id) {
+      // ligne livrée → passe par le retour
+      setReturning(l);
+      return;
+    }
+    // ligne non livrée → retrait libre
+    setLines((ls) => ls.filter((x) => x.key !== l.key));
+  }
+
+  function confirmReturn() {
+    if (!returning) return;
+    // marque la ligne comme retour confirmé et la retire de la liste
+    if (returning.id) setReturnedIds((ids) => [...ids, returning.id!]);
+    setLines((ls) => ls.filter((x) => x.key !== returning.key));
+    setReturning(null);
+  }
+
+  async function submit() {
+    setError(null);
+    if (lines.length === 0) {
+      setError(
+        "La vente doit garder au moins une ligne. Pour tout retirer, supprimez la vente.",
+      );
+      return;
+    }
+    for (const l of lines) {
+      const q = Number(l.quantity);
+      if (!Number.isInteger(q) || q <= 0) {
+        setError(`Quantité invalide pour « ${l.designation} ».`);
+        return;
+      }
+      if (q < l.delivered) {
+        setError(
+          `« ${l.designation} » : ${q} est en dessous du livré (${l.delivered}).`,
+        );
+        return;
+      }
+      if (l.purchase_price.trim() === "" || Number(l.purchase_price) < 0) {
+        setError(`Prix d'achat invalide pour « ${l.designation} ».`);
+        return;
+      }
+      if (l.sale_price.trim() === "" || Number(l.sale_price) < 0) {
+        setError(`Prix de vente invalide pour « ${l.designation} ».`);
+        return;
+      }
+    }
+
+    const body: SaleLinesUpdateInput = {
+      items: lines.map((l) => ({
+        id: l.id,
+        product_id: l.product_id,
+        designation: l.designation.trim(),
+        quantity: Number(l.quantity),
+        unit: l.unit,
+        purchase_price: String(Number(l.purchase_price)),
+        sale_price: String(Number(l.sale_price)),
+      })),
+      returned_item_ids: returnedIds,
+    };
+
+    setBusy(true);
+    try {
+      await api.updateSaleLines(sale.id, body);
+      toast.push("Lignes de la vente mises à jour.", "success");
+      onSaved();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : "Modification impossible.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Modal
+        title={`Modifier les lignes — ${sale.sale_number}`}
+        onClose={onClose}
+        wide
+        footer={
+          <>
+            <button className="btn" onClick={onClose} disabled={busy}>
+              Annuler
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={submit}
+              disabled={busy}
+            >
+              {busy ? "Enregistrement…" : "Enregistrer"}
+            </button>
+          </>
+        }
+      >
+        {error && <ErrorBox message={error} />}
+        <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+          Les lignes déjà livrées sont verrouillées. Pour retirer un article
+          livré (retour client), utilisez « ↩ Retour ».
+        </p>
+
+        <div className="table-wrap">
+          <table className="lines-table">
+            <thead>
+              <tr>
+                <th style={{ minWidth: 180 }}>Désignation</th>
+                <th className="num" style={{ width: 80 }}>
+                  Qté
+                </th>
+                <th className="num" style={{ width: 70 }}>
+                  Livré
+                </th>
+                <th className="num" style={{ width: 110 }}>
+                  Prix vente
+                </th>
+                <th style={{ width: 90 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l) => {
+                const fullyDelivered =
+                  l.delivered > 0 &&
+                  Number(l.quantity) <= l.delivered &&
+                  l.id !== null;
+                const locked = l.delivered > 0; // livrée (partiellement ou totalement) = qté non réductible sous le livré
+                return (
+                  <tr
+                    key={l.key}
+                    style={
+                      fullyDelivered ? { background: "#fffbeb" } : undefined
+                    }
+                  >
+                    <td>
+                      {l.designation}
+                      {fullyDelivered && (
+                        <span
+                          style={{
+                            display: "block",
+                            fontSize: 10,
+                            color: "#b7791f",
+                          }}
+                        >
+                          🔒 livrée — retrait via Retour
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <input
+                        className="input num"
+                        type="number"
+                        min={Math.max(1, l.delivered)}
+                        value={l.quantity}
+                        disabled={fullyDelivered}
+                        onChange={(e) =>
+                          updateLine(l.key, { quantity: e.target.value })
+                        }
+                      />
+                      {locked && !fullyDelivered && (
+                        <span
+                          style={{ fontSize: 10, color: "var(--text-muted)" }}
+                        >
+                          min. {l.delivered}
+                        </span>
+                      )}
+                    </td>
+                    <td className="num">{l.delivered}</td>
+                    <td>
+                      <input
+                        className="input num"
+                        type="number"
+                        min={0}
+                        value={l.sale_price}
+                        disabled={fullyDelivered}
+                        onChange={(e) =>
+                          updateLine(l.key, { sale_price: e.target.value })
+                        }
+                      />
+                    </td>
+                    <td className="num">
+                      {fullyDelivered ? (
+                        <button
+                          className="btn-sm"
+                          style={{
+                            background: "#b7791f",
+                            color: "#fff",
+                            fontSize: 11,
+                          }}
+                          onClick={() => setReturning(l)}
+                        >
+                          ↩ Retour
+                        </button>
+                      ) : (
+                        <button
+                          className="btn-link danger"
+                          onClick={() => removeLine(l)}
+                          title="Retirer"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Modal>
+
+      {returning && (
+        <Modal
+          title={`Traiter un retour — ${returning.designation}`}
+          onClose={() => setReturning(null)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setReturning(null)}>
+                Annuler
+              </button>
+              <button
+                className="btn"
+                style={{ background: "#b7791f", color: "#fff" }}
+                onClick={confirmReturn}
+              >
+                Confirmer le retour
+              </button>
+            </>
+          }
+        >
+          <p style={{ fontSize: 13 }}>
+            <strong>{returning.delivered}</strong> {returning.designation} ont
+            été livrés au client. En confirmant, cette ligne sera{" "}
+            <strong>retirée de la vente</strong> — le client ne la devra plus.
+          </p>
+          <p className="muted" style={{ fontSize: 12 }}>
+            Le bon de livraison correspondant garde la trace de la livraison
+            initiale. À utiliser quand le client retourne effectivement la
+            marchandise.
+          </p>
+        </Modal>
+      )}
+    </>
+  );
+}
 
 function SaleForm({
   clients,

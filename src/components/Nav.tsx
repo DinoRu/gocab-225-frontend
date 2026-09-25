@@ -37,6 +37,13 @@ const CENTRES_LINKS: NavLink[] = [
   { href: "/centres", label: "Demandes", admin: false },
 ];
 
+const TARIFS_LINKS: NavLink[] = [
+  { href: "/tarifs", label: "Articles", admin: true },
+  { href: "/tarifs/par-article", label: "Par article", admin: true },
+  { href: "/tarifs/par-fournisseur", label: "Par fournisseur", admin: true },
+  { href: "/tarifs/fournisseurs", label: "Fournisseurs", admin: true },
+];
+
 // Icônes SVG (trait) par module. Héritent de la couleur du texte (blanc sur la pastille).
 const ICONS: Record<string, ReactNode> = {
   "/": (
@@ -173,6 +180,33 @@ const ICONS: Record<string, ReactNode> = {
       <circle cx="18.5" cy="18.5" r="2.5" />
     </>
   ),
+  "/tarifs": (
+    <>
+      <line x1="12" y1="1" x2="12" y2="23" />
+      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </>
+  ),
+  "/tarifs/par-article": (
+    <>
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </>
+  ),
+  "/tarifs/par-fournisseur": (
+    <>
+      <rect x="1" y="3" width="15" height="13" rx="1" />
+      <polygon points="16 8 20 8 23 11 23 16 16 16 16 8" />
+      <circle cx="5.5" cy="18.5" r="2.5" />
+      <circle cx="18.5" cy="18.5" r="2.5" />
+    </>
+  ),
+  "/tarifs/fournisseurs": (
+    <>
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+    </>
+  ),
 };
 
 function ModuleIcon({ href }: { href: string }) {
@@ -204,11 +238,16 @@ export function Nav() {
       ? VENTES_LINKS
       : zone === "centres"
         ? CENTRES_LINKS
-        : PIECES_LINKS;
+        : zone === "tarifs"
+          ? TARIFS_LINKS
+          : PIECES_LINKS;
   const visible = links.filter((l) => !l.admin || isAdmin);
 
   const isActive = (href: string) =>
-    href === "/" || href === "/ventes"
+    href === "/" ||
+    href === "/ventes" ||
+    href === "/centres" ||
+    href === "/tarifs"
       ? pathname === href
       : pathname.startsWith(href);
 
@@ -288,6 +327,12 @@ export function Nav() {
               className={"app-switch" + (zone === "centres" ? " active" : "")}
             >
               Centres
+            </Link>
+            <Link
+              href="/tarifs"
+              className={"app-switch" + (zone === "tarifs" ? " active" : "")}
+            >
+              Tarifs
             </Link>
           </div>
         )}
