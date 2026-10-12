@@ -23,7 +23,14 @@ type GridRow = {
 
 let rowCounter = 0;
 function emptyRow(): GridRow {
-  return { key: ++rowCounter, reference: "", designation: "", category: "", brand_id: "", model_id: "" };
+  return {
+    key: ++rowCounter,
+    reference: "",
+    designation: "",
+    category: "",
+    brand_id: "",
+    model_id: "",
+  };
 }
 
 function blankRows(n: number): GridRow[] {
@@ -41,12 +48,17 @@ export function BulkPartsModal({
   const [error, setError] = useState<string | null>(null);
   const [askMode, setAskMode] = useState(false); // affiche le choix atomic/partiel
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<BulkResult<PartBulkRead, PartCreateInput> | null>(null);
+  const [result, setResult] = useState<BulkResult<
+    PartBulkRead,
+    PartCreateInput
+  > | null>(null);
   const [sentAtomic, setSentAtomic] = useState(true);
 
   const brands = useAsync(() => api.listBrands(), []);
   // Cache des modèles par marque (chargés à la demande, réutilisés entre lignes).
-  const [modelsByBrand, setModelsByBrand] = useState<Record<string, VehicleModel[]>>({});
+  const [modelsByBrand, setModelsByBrand] = useState<
+    Record<string, VehicleModel[]>
+  >({});
 
   async function ensureModels(brandId: string) {
     if (!brandId || modelsByBrand[brandId]) return;
@@ -66,14 +78,25 @@ export function BulkPartsModal({
 
   // Coller depuis un tableur dans la 1re cellule d'une ligne :
   // remplit reference / designation / category en TSV, et déborde sur les lignes suivantes.
-  function handlePaste(e: React.ClipboardEvent, startKey: number, startField: "reference" | "designation" | "category") {
+  function handlePaste(
+    e: React.ClipboardEvent,
+    startKey: number,
+    startField: "reference" | "designation" | "category",
+  ) {
     const text = e.clipboardData.getData("text");
     if (!text.includes("\t") && !text.includes("\n")) return; // collage simple : comportement natif
     e.preventDefault();
 
-    const fields: ("reference" | "designation" | "category")[] = ["reference", "designation", "category"];
+    const fields: ("reference" | "designation" | "category")[] = [
+      "reference",
+      "designation",
+      "category",
+    ];
     const startCol = fields.indexOf(startField);
-    const lines = text.replace(/\r/g, "").split("\n").filter((l, i, arr) => l !== "" || i < arr.length - 1);
+    const lines = text
+      .replace(/\r/g, "")
+      .split("\n")
+      .filter((l, i, arr) => l !== "" || i < arr.length - 1);
 
     setRows((current) => {
       const next = [...current];
@@ -100,8 +123,11 @@ export function BulkPartsModal({
 
   // Lignes non vides = celles avec au moins une donnée saisie.
   const filledRows = useMemo(
-    () => rows.filter((r) => r.reference.trim() || r.designation.trim() || r.model_id),
-    [rows]
+    () =>
+      rows.filter(
+        (r) => r.reference.trim() || r.designation.trim() || r.model_id,
+      ),
+    [rows],
   );
 
   function validate(): PartCreateInput[] | null {
@@ -113,21 +139,21 @@ export function BulkPartsModal({
     const items: PartCreateInput[] = [];
     for (const r of filledRows) {
       // Le modèle est facultatif en saisie de masse : sans modèle = pièce universelle.
-      if (!r.reference.trim() || !r.designation.trim()) {
+      if (!r.designation.trim()) {
         setError(
-          `Ligne « ${r.reference || r.designation || "?"} » : référence et désignation sont obligatoires.`
+          `Ligne « ${r.designation || "?"} » : la désignation est obligatoire.`,
         );
         return null;
       }
       items.push({
-        reference: r.reference.trim(),
+        reference: r.reference.trim() || null, // vide → null → auto-généré backend
         designation: r.designation.trim(),
         vehicle_model_ids: r.model_id ? [r.model_id] : [],
         category: r.category.trim() || null,
       });
     }
     // Doublons de référence intra-grille (le backend rejette, autant prévenir tôt).
-    const refs = items.map((i) => i.reference.toLowerCase());
+    const refs = items.map((i) => i.reference?.toLowerCase()).filter(Boolean);
     const dup = refs.find((r, i) => refs.indexOf(r) !== i);
     if (dup) {
       setError(`Référence en double dans la grille : « ${dup} ».`);
@@ -167,7 +193,9 @@ export function BulkPartsModal({
     const failedIndexes = new Set(result.failed.map((f) => f.index));
     // Reconstruit la grille depuis les items envoyés (filledRows au moment de l'envoi).
     setRows((current) => {
-      const filled = current.filter((r) => r.reference.trim() || r.designation.trim() || r.model_id);
+      const filled = current.filter(
+        (r) => r.reference.trim() || r.designation.trim() || r.model_id,
+      );
       const kept = filled.filter((_, i) => failedIndexes.has(i));
       return kept.length ? kept : blankRows(3);
     });
@@ -208,25 +236,39 @@ export function BulkPartsModal({
           </div>
           <div className="kpi">
             <div className="label">Créées</div>
-            <div className="value" style={{ color: "var(--success)" }}>{s.succeeded}</div>
+            <div className="value" style={{ color: "var(--success)" }}>
+              {s.succeeded}
+            </div>
           </div>
           <div className="kpi">
             <div className="label">En échec</div>
-            <div className="value" style={{ color: s.failed ? "var(--danger)" : undefined }}>
+            <div
+              className="value"
+              style={{ color: s.failed ? "var(--danger)" : undefined }}
+            >
               {s.failed}
             </div>
           </div>
         </div>
 
         <div className="mode-recap">
-          Mode : <span className="badge accent">{s.atomic ? "Atomique" : "Partiel"}</span>{" "}
+          Mode :{" "}
+          <span className="badge accent">
+            {s.atomic ? "Atomique" : "Partiel"}
+          </span>{" "}
           {s.atomic && !s.committed && (
-            <span className="badge" style={{ color: "var(--danger)", borderColor: "var(--danger)" }}>
+            <span
+              className="badge"
+              style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
+            >
               Rien enregistré (annulé)
             </span>
           )}
           {s.committed && s.succeeded > 0 && (
-            <span className="muted"> — {s.succeeded} pièce(s) enregistrée(s).</span>
+            <span className="muted">
+              {" "}
+              — {s.succeeded} pièce(s) enregistrée(s).
+            </span>
           )}
         </div>
 
@@ -235,7 +277,9 @@ export function BulkPartsModal({
             <table>
               <thead>
                 <tr>
-                  <th style={{ width: 50 }} className="num">Ligne</th>
+                  <th style={{ width: 50 }} className="num">
+                    Ligne
+                  </th>
                   <th>Référence</th>
                   <th>Désignation</th>
                   <th>Erreur</th>
@@ -248,7 +292,9 @@ export function BulkPartsModal({
                     <td className="mono">{f.input.reference}</td>
                     <td>{f.input.designation}</td>
                     <td>
-                      <span className="badge" style={{ marginRight: 6 }}>{errorLabel(f.error.type)}</span>
+                      <span className="badge" style={{ marginRight: 6 }}>
+                        {errorLabel(f.error.type)}
+                      </span>
                       {f.error.message}
                     </td>
                   </tr>
@@ -268,28 +314,40 @@ export function BulkPartsModal({
         title="Comment enregistrer ce lot ?"
         onClose={() => setAskMode(false)}
         footer={
-          <button className="btn" onClick={() => setAskMode(false)} disabled={busy}>
+          <button
+            className="btn"
+            onClick={() => setAskMode(false)}
+            disabled={busy}
+          >
             Retour
           </button>
         }
       >
         <p className="muted" style={{ marginTop: 0 }}>
-          {filledRows.length} pièce(s) à créer. Choisissez le comportement en cas d'erreur sur
-          une ligne.
+          {filledRows.length} pièce(s) à créer. Choisissez le comportement en
+          cas d'erreur sur une ligne.
         </p>
         <div className="mode-cards">
-          <button className="mode-card" onClick={() => send(true)} disabled={busy}>
+          <button
+            className="mode-card"
+            onClick={() => send(true)}
+            disabled={busy}
+          >
             <div className="mode-card-title">Tout ou rien</div>
             <div className="mode-card-desc">
-              Si une seule ligne échoue, aucune pièce n'est créée. Idéal pour un import
-              « propre ou rien ».
+              Si une seule ligne échoue, aucune pièce n'est créée. Idéal pour un
+              import « propre ou rien ».
             </div>
           </button>
-          <button className="mode-card" onClick={() => send(false)} disabled={busy}>
+          <button
+            className="mode-card"
+            onClick={() => send(false)}
+            disabled={busy}
+          >
             <div className="mode-card-title">Succès partiel</div>
             <div className="mode-card-desc">
-              Les lignes valides sont créées, les autres sont listées avec leur erreur pour
-              correction.
+              Les lignes valides sont créées, les autres sont listées avec leur
+              erreur pour correction.
             </div>
           </button>
         </div>
@@ -317,16 +375,18 @@ export function BulkPartsModal({
     >
       {error && <ErrorBox message={error} />}
       <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
-        Saisissez une pièce par ligne. Vous pouvez coller depuis Excel dans la colonne Référence
-        (colonnes attendues : Référence, Désignation, Catégorie). Laissez Marque/Modèle
-        vides pour une pièce universelle.
+        Saisissez une pièce par ligne. Vous pouvez coller depuis Excel dans la
+        colonne Référence (colonnes attendues : Référence, Désignation,
+        Catégorie). Laissez Marque/Modèle vides pour une pièce universelle.
       </p>
 
       <div className="table-wrap">
         <table className="lines-table">
           <thead>
             <tr>
-              <th style={{ width: 30 }} className="num">#</th>
+              <th style={{ width: 30 }} className="num">
+                #
+              </th>
               <th style={{ width: 150 }}>Référence *</th>
               <th>Désignation *</th>
               <th style={{ width: 130 }}>Marque</th>
@@ -343,7 +403,9 @@ export function BulkPartsModal({
                   <input
                     className="input mono"
                     value={r.reference}
-                    onChange={(e) => update(r.key, { reference: e.target.value })}
+                    onChange={(e) =>
+                      update(r.key, { reference: e.target.value })
+                    }
                     onPaste={(e) => handlePaste(e, r.key, "reference")}
                   />
                 </td>
@@ -351,7 +413,9 @@ export function BulkPartsModal({
                   <input
                     className="input"
                     value={r.designation}
-                    onChange={(e) => update(r.key, { designation: e.target.value })}
+                    onChange={(e) =>
+                      update(r.key, { designation: e.target.value })
+                    }
                     onPaste={(e) => handlePaste(e, r.key, "designation")}
                   />
                 </td>
@@ -376,7 +440,9 @@ export function BulkPartsModal({
                   <select
                     className="select"
                     value={r.model_id}
-                    onChange={(e) => update(r.key, { model_id: e.target.value })}
+                    onChange={(e) =>
+                      update(r.key, { model_id: e.target.value })
+                    }
                     disabled={!r.brand_id}
                   >
                     <option value="">—</option>
@@ -391,7 +457,9 @@ export function BulkPartsModal({
                   <input
                     className="input"
                     value={r.category}
-                    onChange={(e) => update(r.key, { category: e.target.value })}
+                    onChange={(e) =>
+                      update(r.key, { category: e.target.value })
+                    }
                     onPaste={(e) => handlePaste(e, r.key, "category")}
                   />
                 </td>

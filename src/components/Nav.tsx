@@ -39,6 +39,7 @@ const CENTRES_LINKS: NavLink[] = [
 
 const TARIFS_LINKS: NavLink[] = [
   { href: "/tarifs", label: "Articles", admin: true },
+  { href: "/tarifs/vehicules", label: "Marques & modèles", admin: true },
   { href: "/tarifs/par-article", label: "Par article", admin: true },
   { href: "/tarifs/par-fournisseur", label: "Par fournisseur", admin: true },
   { href: "/tarifs/fournisseurs", label: "Fournisseurs", admin: true },

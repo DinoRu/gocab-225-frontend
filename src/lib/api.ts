@@ -72,6 +72,9 @@ import type {
   TariffSupplier,
   TariffSupplierInput,
   SaleLinesUpdateInput,
+  TariffBrand,
+  TariffModel,
+  SalesInvoice,
 } from "./types";
 
 const BASE_URL =
@@ -876,6 +879,50 @@ export const api = {
 
   updateSaleLines(orderId: string, body: SaleLinesUpdateInput): Promise<SalesOrder> {
     return request<SalesOrder>("PATCH", `/sales/orders/${orderId}/lines`, { body });
+  },
+
+    // ============ TARIFS : Marques ============
+  listTariffBrands(): Promise<TariffBrand[]> {
+    return request<TariffBrand[]>("GET", "/tariffs/brands");
+  },
+  createTariffBrand(name: string): Promise<TariffBrand> {
+    return request<TariffBrand>("POST", "/tariffs/brands", { body: { name } });
+  },
+  deleteTariffBrand(id: string): Promise<void> {
+    return request<void>("DELETE", `/tariffs/brands/${id}`);
+  },
+
+  // ============ TARIFS : Modèles ============
+  listTariffModels(brandId?: string): Promise<TariffModel[]> {
+    return request<TariffModel[]>("GET", "/tariffs/models", { query: brandId ? { brand_id: brandId } : {} });
+  },
+  createTariffModel(brandId: string, name: string): Promise<TariffModel> {
+    return request<TariffModel>("POST", "/tariffs/models", { body: { brand_id: brandId, name } });
+  },
+  deleteTariffModel(id: string): Promise<void> {
+    return request<void>("DELETE", `/tariffs/models/${id}`);
+  },
+
+  createTariffModelsBulk(brandId: string, names: string[]): Promise<TariffModel[]> {
+    return request<TariffModel[]>("POST", "/tariffs/models/bulk", { body: { brand_id: brandId, names } });
+  },
+
+  nextTariffArticleReference(): Promise<{ reference: string }> {
+    return request<{ reference: string }>("GET", "/tariffs/articles/next-reference");
+  },
+
+  nextPartReference(): Promise<{ reference: string }> {
+    return request<{ reference: string }>("GET", "/parts/next-reference");
+  },
+
+    issueInvoice(orderId: string): Promise<SalesInvoice> {
+    return request<SalesInvoice>("POST", `/sales/orders/${orderId}/invoice`, {});
+  },
+  getOrderInvoice(orderId: string): Promise<SalesInvoice | null> {
+    return request<SalesInvoice | null>("GET", `/sales/orders/${orderId}/invoice`);
+  },
+  invoicePdfUrl(invoiceId: string): string {
+    return buildUrl(`/sales/invoices/${invoiceId}/pdf`);
   },
 };
 

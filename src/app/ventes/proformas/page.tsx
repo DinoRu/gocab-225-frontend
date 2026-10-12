@@ -287,6 +287,24 @@ function ProformaDetail({
 
   function buildModel(): DocumentModel {
     const ht = Number(data!.total);
+    if (!data!.vat_applicable) {
+      return {
+        title: "FACTURE PROFORMA",
+        number: data!.proforma_number,
+        date: data!.proforma_date,
+        client_name: data!.client_name,
+        columns: { qty: "Qté", unit_price: "Prix unitaire" },
+        lines: data!.items.map((it) => ({
+          designation: it.designation,
+          quantity: it.quantity,
+          unit_price: it.sale_price,
+          total: it.line_total,
+        })),
+        totals: { simple: String(ht) }, // pas de TVA → total unique
+        footer_note:
+          "Ce document est une facture proforma, sans valeur comptable.",
+      };
+    }
     const tva = Math.round(ht * VAT_RATE);
     return {
       title: "FACTURE PROFORMA",
@@ -719,6 +737,9 @@ function ProformaForm({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [vatApplicable, setVatApplicable] = useState(
+    proforma?.vat_applicable ?? true,
+  );
 
   const products = useAsync(() => api.listSalesProducts({ limit: 1000 }), []);
 
@@ -775,6 +796,7 @@ function ProformaForm({
           client_id: clientId,
           proforma_date: pfDate,
           notes: notes.trim() || null,
+          vat_applicable: vatApplicable,
           items,
         });
       } else {
@@ -782,6 +804,7 @@ function ProformaForm({
           client_id: clientId,
           proforma_date: pfDate,
           notes: notes.trim() || null,
+          vat_applicable: vatApplicable,
           items,
         });
       }
@@ -864,7 +887,7 @@ function ProformaForm({
 
       <div
         className="form-grid"
-        style={{ gridTemplateColumns: "2fr 1fr", marginBottom: 16 }}
+        style={{ gridTemplateColumns: "3fr 1fr 1fr", marginBottom: 16 }}
       >
         <div className="field">
           <label>
@@ -893,6 +916,19 @@ function ProformaForm({
             value={pfDate}
             onChange={(e) => setPfDate(e.target.value)}
           />
+        </div>
+        <div className="field" style={{ justifyContent: "flex-end" }}>
+          <label
+            className="row-flex"
+            style={{ gap: 6, cursor: "pointer", fontSize: 13 }}
+          >
+            <input
+              type="checkbox"
+              checked={!vatApplicable}
+              onChange={(e) => setVatApplicable(!e.target.checked)}
+            />
+            Proforma hors taxe (sans TVA)
+          </label>
         </div>
       </div>
 

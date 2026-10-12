@@ -54,7 +54,7 @@ export interface Part {
 export type PartDetail = Part;
 
 export interface PartCreateInput {
-  reference: string;
+  reference: string | null;
   designation: string;
   vehicle_model_ids: string[];
   category?: string | null;
@@ -563,10 +563,13 @@ export interface SalesOrderItemInput {
 export interface SalesOrder {
   id: string;
   sale_number: string;
+  invoice_id: string | null;      
+  invoice_number: string | null;
   client_id: string;
   client_name: string;
   sale_date: string;
   notes: string | null;
+  vat_applicable: boolean;  
   items: SalesOrderItem[];
   total_sale: string;
   total_purchase: string;
@@ -575,8 +578,8 @@ export interface SalesOrder {
   vat_amount: string;      // TVA
   total_ttc: string;       // TTC
   delivery_status: DeliveryStatus
-  payment_status: SalePaymentStatus;    // ← ajoute
-  amount_paid: string;              // ← ajoute
+  payment_status: SalePaymentStatus;
+  amount_paid: string;
   amount_due: string;  
   created_at: string;
 }
@@ -585,6 +588,7 @@ export interface SalesOrderInput {
   client_id: string;
   sale_date: string;
   notes?: string | null;
+  vat_applicable?: boolean;  
   items: SalesOrderItemInput[];
 }
 
@@ -688,6 +692,7 @@ export interface SalesProforma {
   proforma_date: string;
   status: ProformaStatus;
   notes: string | null;
+  vat_applicable: boolean;
   converted_sale_id: string | null;
   converted_sale_number: string | null;
   items: ProformaItem[];
@@ -698,6 +703,7 @@ export interface SalesProformaInput {
   client_id: string;
   proforma_date: string;
   notes?: string | null;
+  vat_applicable?: boolean;
   items: ProformaItemInput[];
 }
 export interface ProformaConvertItemInput {
@@ -862,14 +868,20 @@ export interface TariffArticle {
   id: string;
   reference: string | null;
   designation: string;
+  brand_name: string;
+  model_name: string;
+  model_id: string;
   notes: string | null;
   supplier_count: number;
   best_price: string | null;
   created_at: string;
 }
+
+
 export interface TariffArticleInput {
   reference?: string | null;
   designation: string;
+  model_id: string;
   notes?: string | null;
 }
 
@@ -945,4 +957,47 @@ export interface SaleLineEditInput {
 export interface SaleLinesUpdateInput {
   items: SaleLineEditInput[];
   returned_item_ids: string[];
+}
+
+// --- Marques et modèles (Tarifs) ---
+export interface TariffBrand {
+  id: string;
+  name: string;
+}
+
+
+export interface TariffModel {
+  id: string;
+  brand_id: string;
+  brand_name: string;
+  name: string;
+}
+
+// --- Factures ---
+export interface InvoiceItem {
+  id: string;
+  designation: string;
+  quantity: number;
+  unit: string;
+  sale_price: string;
+  line_total: string;
+}
+
+
+export interface SalesInvoice {
+  id: string;
+  invoice_number: string;
+  sales_order_id: string | null;
+  sale_number: string | null;
+  client_id: string;
+  client_name: string;
+  invoice_date: string;
+  vat_applicable: boolean;
+  total_ht: string;
+  vat_amount: string;
+  total_ttc: string;
+  notes: string | null;
+  items: InvoiceItem[];
+  diverged: boolean;
+  created_at: string;
 }

@@ -99,6 +99,7 @@ export default function TariffArticlesPage() {
             <tr>
               <th>Référence</th>
               <th>Désignation</th>
+              <th>Véhicule</th>
               <th className="num">Fournisseurs</th>
               <th className="num">Meilleur prix</th>
               <th className="actions">Actions</th>
@@ -107,13 +108,13 @@ export default function TariffArticlesPage() {
           <tbody>
             {articles.loading && !articles.data ? (
               <tr>
-                <td colSpan={5}>
+                <td colSpan={6}>
                   <Loading />
                 </td>
               </tr>
             ) : articles.data && articles.data.items.length === 0 ? (
               <tr>
-                <td colSpan={5}>
+                <td colSpan={6}>
                   <EmptyState
                     message="Aucun article"
                     hint="Ajoutez les pièces dont vous suivez les prix."
@@ -127,6 +128,9 @@ export default function TariffArticlesPage() {
                     {a.reference || <span className="muted">—</span>}
                   </td>
                   <td style={{ fontWeight: 600 }}>{a.designation}</td>
+                  <td>
+                    {a.brand_name} {a.model_name}
+                  </td>
                   <td className="num">
                     {a.supplier_count > 0 ? (
                       a.supplier_count
@@ -221,9 +225,41 @@ function ArticleForm({
 }) {
   const [reference, setReference] = useState(article?.reference ?? "");
   const [designation, setDesignation] = useState(article?.designation ?? "");
+  const [modelId, setModelId] = useState(article?.model_id ?? "");
   const [notes, setNotes] = useState(article?.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const brands = useAsync(() => api.listTariffBrands(), []);
+  // brand sélectionnée : déduite du modèle en édition, ou choisie
+  const [brandId, setBrandId] = useState("");
+  const models = useAsync(
+    () => (brandId ? api.listTariffModels(brandId) : Promise.resolve([])),
+    [brandId],
+  );
+
+  // En édition : retrouver la marque du modèle existant pour pré-sélectionner
+  useEffect(() => {
+    if (article?.model_id && !brandId) {
+      // on charge tous les modèles une fois pour retrouver la marque du modèle courant
+      api
+        .listTariffModels()
+        .then((all) => {
+          const m = all.find((x) => x.id === article.model_id);
+          if (m) setBrandId(m.brand_id);
+        })
+        .catch(() => {});
+    }
+  }, [article, brandId]);
+
+  // À la création : proposer une référence auto
+  useEffect(() => {
+    if (article) return;
+    api
+      .nextTariffArticleReference()
+      .then((r) => setReference((cur) => cur || r.reference))
+      .catch(() => {});
+  }, [article]);
 
   async function submit() {
     setError(null);
@@ -231,9 +267,14 @@ function ArticleForm({
       setError("La désignation est obligatoire.");
       return;
     }
+    if (!modelId) {
+      setError("Choisissez le véhicule (marque et modèle).");
+      return;
+    }
     const body: TariffArticleInput = {
       reference: reference.trim() || null,
       designation: designation.trim(),
+      model_id: modelId,
       notes: notes.trim() || null,
     };
     setBusy(true);
@@ -264,6 +305,54 @@ function ArticleForm({
       }
     >
       {error && <ErrorBox message={error} />}
+
+      {/* Véhicule : marque puis modèle */}
+      <div
+        className="form-grid"
+        style={{ gridTemplateColumns: "1fr 1fr", marginBottom: 12 }}
+      >
+        <div className="field">
+          <label>
+            Marque <span className="required">*</span>
+          </label>
+          <select
+            className="select"
+            value={brandId}
+            onChange={(e) => {
+              setBrandId(e.target.value);
+              setModelId("");
+            }}
+          >
+            <option value="">Choisir…</option>
+            {brands.data?.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label>
+            Modèle <span className="required">*</span>
+          </label>
+          <select
+            className="select"
+            value={modelId}
+            onChange={(e) => setModelId(e.target.value)}
+            disabled={!brandId}
+          >
+            <option value="">
+              {brandId ? "Choisir…" : "Choisissez d'abord la marque"}
+            </option>
+            {models.data?.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       <div
         className="form-grid"
         style={{ gridTemplateColumns: "1fr 2fr", marginBottom: 12 }}
@@ -274,7 +363,7 @@ function ArticleForm({
             className="input"
             value={reference}
             onChange={(e) => setReference(e.target.value)}
-            placeholder="Facultatif"
+            placeholder="Générée automatiquement"
           />
         </div>
         <div className="field">
@@ -286,10 +375,11 @@ function ArticleForm({
             value={designation}
             onChange={(e) => setDesignation(e.target.value)}
             autoFocus
-            placeholder="Ex : Compresseur Suzuki phase 1"
+            placeholder="Ex : Kit de plaquettes de frein"
           />
         </div>
       </div>
+
       <div className="field">
         <label>Notes</label>
         <textarea

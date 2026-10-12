@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, downloadWithAuth } from "@/lib/api";
 import { useAsync } from "@/lib/useAsync";
 import { formatDate, formatFCFA, formatNumber } from "@/lib/format";
 import type {
@@ -191,19 +191,20 @@ export default function SalesOrdersPage() {
               <th className="num">Marge</th>
               <th>Paiement</th>
               <th>Livraison</th>
+              <th>Facture</th>
               <th className="actions">Actions</th>
             </tr>
           </thead>
           <tbody>
             {sales.loading && !sales.data ? (
               <tr>
-                <td colSpan={8}>
+                <td colSpan={9}>
                   <Loading />
                 </td>
               </tr>
             ) : sales.data && sales.data.items.length === 0 ? (
               <tr>
-                <td colSpan={8}>
+                <td colSpan={9}>
                   <EmptyState
                     message="Aucune vente"
                     hint="Enregistrez votre première vente."
@@ -246,6 +247,20 @@ export default function SalesOrdersPage() {
                     >
                       {DELIVERY_LABEL[s.delivery_status] || "—"}
                     </span>
+                  </td>
+                  <td>
+                    {s.invoice_number ? (
+                      <span
+                        className="mono"
+                        style={{ fontSize: 11, color: "var(--success)" }}
+                      >
+                        {s.invoice_number}
+                      </span>
+                    ) : (
+                      <span className="muted" style={{ fontSize: 11 }}>
+                        —
+                      </span>
+                    )}
                   </td>
                   <td className="actions" onClick={(e) => e.stopPropagation()}>
                     <button
@@ -343,9 +358,45 @@ export default function SalesOrdersPage() {
 
 // ---------- Détail d'une vente ----------
 function SaleDetail({ id, onClose }: { id: string; onClose: () => void }) {
+  const toast = useToast();
   const sale = useAsync(() => api.getSalesOrder(id), [id]);
+  const invoice = useAsync(() => api.getOrderInvoice(id), [id]);
+  const [issuing, setIssuing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [editing, setEditing] = useState(false);
   const data = sale.data;
+  const inv = invoice.data;
+
+  async function issue() {
+    setIssuing(true);
+    try {
+      await api.issueInvoice(id);
+      toast.push("Facture générée.", "success");
+      invoice.reload();
+    } catch (e) {
+      toast.push(
+        e instanceof ApiError ? e.detail : "Génération impossible.",
+        "error",
+      );
+    } finally {
+      setIssuing(false);
+    }
+  }
+
+  async function downloadInvoice() {
+    if (!inv) return;
+    setDownloading(true);
+    try {
+      await downloadWithAuth(
+        api.invoicePdfUrl(inv.id),
+        `${inv.invoice_number}.pdf`,
+      );
+    } catch {
+      toast.push("Téléchargement impossible.", "error");
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <>
@@ -380,6 +431,10 @@ function SaleDetail({ id, onClose }: { id: string; onClose: () => void }) {
             >
               <Field label="Client" value={data.client_name} />
               <Field label="Date" value={formatDate(data.sale_date)} />
+              <Field
+                label="TVA applicable"
+                value={data.vat_applicable ? "Oui" : "Non"}
+              />
             </div>
 
             {/* Récap financier : HT → TVA → TTC, + marge */}
@@ -388,18 +443,98 @@ function SaleDetail({ id, onClose }: { id: string; onClose: () => void }) {
                 <span>Total HT</span>
                 <span>{formatFCFA(data.total_sale)}</span>
               </div>
-              <div className="sale-totals-row">
-                <span>TVA (18%)</span>
-                <span>{formatFCFA(data.vat_amount)}</span>
-              </div>
-              <div className="sale-totals-row sale-totals-ttc">
-                <span>Total TTC (dû par le client)</span>
-                <span>{formatFCFA(data.total_ttc)}</span>
-              </div>
+              {data.vat_applicable ? (
+                <>
+                  <div className="sale-totals-row">
+                    <span>TVA (18%)</span>
+                    <span>{formatFCFA(data.vat_amount)}</span>
+                  </div>
+                  <div className="sale-totals-row sale-totals-ttc">
+                    <span>Total TTC (dû par le client)</span>
+                    <span>{formatFCFA(data.total_ttc)}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="sale-totals-row sale-totals-ttc">
+                  <span>Total (hors taxe)</span>
+                  <span>{formatFCFA(data.total_sale)}</span>
+                </div>
+              )}
               <div className="sale-totals-row sale-totals-margin">
                 <span>Marge (sur HT)</span>
                 <span>{formatFCFA(data.total_margin)}</span>
               </div>
+            </div>
+
+            {/* Bloc facturation */}
+            <div className="invoice-block">
+              {invoice.loading ? null : inv ? (
+                <>
+                  <div className="invoice-head">
+                    <div>
+                      <span
+                        className="badge"
+                        style={{ background: "#dcfce7", color: "#166534" }}
+                      >
+                        Facturée
+                      </span>
+                      <span
+                        className="mono"
+                        style={{ marginLeft: 8, fontWeight: 700 }}
+                      >
+                        {inv.invoice_number}
+                      </span>
+                      <span
+                        className="muted"
+                        style={{ marginLeft: 8, fontSize: 12 }}
+                      >
+                        émise le {formatDate(inv.invoice_date)} ·{" "}
+                        {formatFCFA(inv.total_ttc)}
+                      </span>
+                    </div>
+                    <button
+                      className="btn btn-sm btn-primary"
+                      onClick={downloadInvoice}
+                      disabled={downloading}
+                    >
+                      {downloading
+                        ? "Téléchargement…"
+                        : "⬇ Télécharger la facture"}
+                    </button>
+                  </div>
+                  {inv.diverged && (
+                    <div
+                      className="warn-banner"
+                      style={{
+                        background: "#fffbeb",
+                        color: "#92600a",
+                        marginTop: 8,
+                      }}
+                    >
+                      ⚠ La vente a été modifiée après l'émission de la facture{" "}
+                      {inv.invoice_number}. La facture reste figée sur son
+                      contenu d'origine ({formatFCFA(inv.total_ttc)}). Si le
+                      changement doit être facturé, envisagez un avoir.
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="invoice-head">
+                  <span
+                    className="badge"
+                    style={{ background: "#f3f4f6", color: "#6b7280" }}
+                  >
+                    Non facturée
+                  </span>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={issue}
+                    disabled={issuing}
+                  >
+                    {issuing ? "Génération…" : "📄 Générer la facture"}
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="table-wrap">
@@ -801,6 +936,7 @@ function SaleForm({
   const [error, setError] = useState<string | null>(null);
 
   const products = useAsync(() => api.listSalesProducts({ limit: 1000 }), []);
+  const [vatApplicable, setVatApplicable] = useState(true);
 
   function updateLine(key: number, patch: Partial<SaleLine>) {
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -895,6 +1031,7 @@ function SaleForm({
         client_id: clientId,
         sale_date: saleDate,
         notes: notes.trim() || null,
+        vat_applicable: vatApplicable, // ← ajoute
         items,
       });
       onSaved(created.sale_number);
@@ -943,7 +1080,7 @@ function SaleForm({
 
       <div
         className="form-grid"
-        style={{ gridTemplateColumns: "2fr 1fr", marginBottom: 16 }}
+        style={{ gridTemplateColumns: "3fr 1fr 1fr", marginBottom: 16 }}
       >
         <div className="field">
           <label>
@@ -972,6 +1109,19 @@ function SaleForm({
             value={saleDate}
             onChange={(e) => setSaleDate(e.target.value)}
           />
+        </div>
+        <div className="field" style={{ justifyContent: "flex-end" }}>
+          <label
+            className="row-flex"
+            style={{ gap: 6, cursor: "pointer", fontSize: 13 }}
+          >
+            <input
+              type="checkbox"
+              checked={!vatApplicable}
+              onChange={(e) => setVatApplicable(!e.target.checked)}
+            />
+            Vente hors taxe (sans TVA)
+          </label>
         </div>
       </div>
 
@@ -1156,29 +1306,37 @@ function SaleForm({
         >
           + Ajouter une ligne
         </button>
-        <div
-          style={{ display: "flex", gap: 20, fontSize: 13, flexWrap: "wrap" }}
-        >
+      </div>
+      <div style={{ display: "flex", gap: 20, fontSize: 13, flexWrap: "wrap" }}>
+        <div>
+          Total HT : <strong>{formatFCFA(totals.sale)}</strong>
+        </div>
+        {vatApplicable ? (
+          <>
+            <div>
+              TVA 18% :{" "}
+              <span className="muted">{formatFCFA(totals.sale * 0.18)}</span>
+            </div>
+            <div>
+              TTC : <strong>{formatFCFA(totals.sale * 1.18)}</strong>
+            </div>
+          </>
+        ) : (
           <div>
-            Total HT : <strong>{formatFCFA(totals.sale)}</strong>
+            <span className="muted" style={{ fontStyle: "italic" }}>
+              Hors taxe
+            </span>
           </div>
-          <div>
-            TVA 18% :{" "}
-            <span className="muted">{formatFCFA(totals.sale * 0.18)}</span>
-          </div>
-          <div>
-            TTC : <strong>{formatFCFA(totals.sale * 1.18)}</strong>
-          </div>
-          <div>
-            Marge :{" "}
-            <strong style={{ color: "var(--success)" }}>
-              {formatFCFA(totals.margin)}
-            </strong>
-          </div>
+        )}
+        <div>
+          Marge :{" "}
+          <strong style={{ color: "var(--success)" }}>
+            {formatFCFA(totals.margin)}
+          </strong>
         </div>
       </div>
 
-      <div className="field">
+      <div className="field mt-16">
         <label>Notes</label>
         <textarea
           className="input"

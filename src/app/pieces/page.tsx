@@ -51,7 +51,7 @@ export default function PartsPage() {
   const brands = useAsync(() => api.listBrands(), []);
   const filterModels = useAsync(
     () => (brandId ? api.brandModels(brandId) : Promise.resolve([])),
-    [brandId]
+    [brandId],
   );
 
   const parts = useAsync(
@@ -63,7 +63,7 @@ export default function PartsPage() {
         page,
         limit: LIMIT,
       }),
-    [debounced, brandId, modelId, page]
+    [debounced, brandId, modelId, page],
   );
 
   async function confirmDelete() {
@@ -75,7 +75,10 @@ export default function PartsPage() {
       setDeleting(null);
       parts.reload();
     } catch (e) {
-      toast.push(e instanceof ApiError ? e.detail : "Suppression impossible.", "error");
+      toast.push(
+        e instanceof ApiError ? e.detail : "Suppression impossible.",
+        "error",
+      );
     } finally {
       setDeleteBusy(false);
     }
@@ -89,9 +92,10 @@ export default function PartsPage() {
 
   const pageIds = useMemo(
     () => (parts.data?.items ?? []).map((p) => p.id),
-    [parts.data]
+    [parts.data],
   );
-  const allSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const allSelected =
+    pageIds.length > 0 && pageIds.every((id) => selected.has(id));
 
   function toggleOne(id: string) {
     setSelected((prev) => {
@@ -118,15 +122,24 @@ export default function PartsPage() {
       } else if (!committed) {
         // atomique échoué : rien supprimé
         const first = res.failed[0]?.error.message ?? "";
-        toast.push(`Suppression annulée : ${failed} en conflit. ${first}`, "error");
+        toast.push(
+          `Suppression annulée : ${failed} en conflit. ${first}`,
+          "error",
+        );
       } else {
-        toast.push(`${succeeded} supprimée(s), ${failed} en échec (référencées ailleurs).`, "error");
+        toast.push(
+          `${succeeded} supprimée(s), ${failed} en échec (référencées ailleurs).`,
+          "error",
+        );
       }
       setBulkDeleteAsk(false);
       setSelected(new Set());
       parts.reload();
     } catch (e) {
-      toast.push(e instanceof ApiError ? e.detail : "Suppression impossible.", "error");
+      toast.push(
+        e instanceof ApiError ? e.detail : "Suppression impossible.",
+        "error",
+      );
       setBulkDeleteAsk(false);
     } finally {
       setBulkDeleteBusy(false);
@@ -138,7 +151,9 @@ export default function PartsPage() {
       <div className="page-head">
         <div>
           <h1>Pièces détachées</h1>
-          <div className="sub">Catalogue des références par marque et modèle</div>
+          <div className="sub">
+            Catalogue des références par marque et modèle
+          </div>
         </div>
         <div className="row-flex">
           <button className="btn" onClick={() => setBulkOpen(true)}>
@@ -206,7 +221,10 @@ export default function PartsPage() {
       {selected.size > 0 && (
         <div className="bulk-bar">
           <span className="count">{selected.size} sélectionnée(s)</span>
-          <button className="btn btn-sm btn-danger" onClick={() => setBulkDeleteAsk(true)}>
+          <button
+            className="btn btn-sm btn-danger"
+            onClick={() => setBulkDeleteAsk(true)}
+          >
             Supprimer la sélection
           </button>
           <button className="btn btn-sm" onClick={() => setSelected(new Set())}>
@@ -254,7 +272,11 @@ export default function PartsPage() {
               parts.data?.items.map((p) => (
                 <tr
                   key={p.id}
-                  style={selected.has(p.id) ? { background: "var(--accent-soft)" } : undefined}
+                  style={
+                    selected.has(p.id)
+                      ? { background: "var(--accent-soft)" }
+                      : undefined
+                  }
                 >
                   <td className="select-cell">
                     <input
@@ -265,7 +287,10 @@ export default function PartsPage() {
                     />
                   </td>
                   <td className="mono">
-                    <Link href={`/pieces/${p.id}`} style={{ color: "var(--accent)" }}>
+                    <Link
+                      href={`/pieces/${p.id}`}
+                      style={{ color: "var(--accent)" }}
+                    >
                       {p.reference}
                     </Link>
                   </td>
@@ -286,7 +311,10 @@ export default function PartsPage() {
                     <button className="btn-link" onClick={() => setEditing(p)}>
                       Modifier
                     </button>
-                    <button className="btn-link danger" onClick={() => setDeleting(p)}>
+                    <button
+                      className="btn-link danger"
+                      onClick={() => setDeleting(p)}
+                    >
                       Supprimer
                     </button>
                   </td>
@@ -385,20 +413,29 @@ function BulkDeleteChoice({
       }
     >
       <p className="muted" style={{ marginTop: 0 }}>
-        Certaines pièces peuvent être référencées dans des commandes et refuser d'être
-        supprimées. Choisissez le comportement.
+        Certaines pièces peuvent être référencées dans des commandes et refuser
+        d'être supprimées. Choisissez le comportement.
       </p>
       <div className="mode-cards">
-        <button className="mode-card" onClick={() => onChoose(true)} disabled={busy}>
+        <button
+          className="mode-card"
+          onClick={() => onChoose(true)}
+          disabled={busy}
+        >
           <div className="mode-card-title">Tout ou rien</div>
           <div className="mode-card-desc">
             Si une seule pièce refuse d'être supprimée, aucune n'est supprimée.
           </div>
         </button>
-        <button className="mode-card" onClick={() => onChoose(false)} disabled={busy}>
+        <button
+          className="mode-card"
+          onClick={() => onChoose(false)}
+          disabled={busy}
+        >
           <div className="mode-card-title">Supprimer ce qui est possible</div>
           <div className="mode-card-desc">
-            Supprime les pièces libres, conserve celles utilisées dans des commandes.
+            Supprime les pièces libres, conserve celles utilisées dans des
+            commandes.
           </div>
         </button>
       </div>
@@ -424,7 +461,7 @@ function PartForm({
   const [universal, setUniversal] = useState(part ? part.is_universal : false);
   // Modèles compatibles sélectionnés (ids).
   const [selectedModels, setSelectedModels] = useState<Set<string>>(
-    () => new Set(part?.vehicle_models.map((m) => m.id) ?? [])
+    () => new Set(part?.vehicle_models.map((m) => m.id) ?? []),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -433,17 +470,32 @@ function PartForm({
   const [brandFilter, setBrandFilter] = useState("");
   const brands = useAsync(() => api.listBrands(), []);
   const models = useAsync(
-    () => (brandFilter ? api.brandModels(brandFilter) : Promise.resolve<VehicleModel[]>([])),
-    [brandFilter]
+    () =>
+      brandFilter
+        ? api.brandModels(brandFilter)
+        : Promise.resolve<VehicleModel[]>([]),
+    [brandFilter],
   );
 
   // Pour afficher les puces des modèles déjà sélectionnés, on garde leur libellé.
   const [labels, setLabels] = useState<Map<string, string>>(
     () =>
       new Map(
-        (part?.vehicle_models ?? []).map((m) => [m.id, `${m.brand_name} ${m.name}`])
-      )
+        (part?.vehicle_models ?? []).map((m) => [
+          m.id,
+          `${m.brand_name} ${m.name}`,
+        ]),
+      ),
   );
+
+  // À la création (pas en édition), proposer une référence auto si le champ est vide.
+  useEffect(() => {
+    if (isEdit) return; // en édition, on garde la référence existante
+    api
+      .nextPartReference()
+      .then((r) => setReference((cur) => cur || r.reference))
+      .catch(() => {}); // silencieux : l'utilisateur pourra saisir manuellement
+  }, [isEdit]);
 
   function toggleModel(id: string, label: string) {
     setSelectedModels((prev) => {
@@ -475,7 +527,7 @@ function PartForm({
     }
     if (!universal && selectedModels.size === 0) {
       setError(
-        "Sélectionnez au moins un modèle compatible, ou cochez « Pièce universelle »."
+        "Sélectionnez au moins un modèle compatible, ou cochez « Pièce universelle ».",
       );
       return;
     }
@@ -524,9 +576,15 @@ function PartForm({
             className="input mono"
             value={reference}
             onChange={(e) => setReference(e.target.value)}
-            placeholder="5206050BF01A"
-            autoFocus
+            placeholder="Générée automatiquement"
+            autoFocus={isEdit}
           />
+          {!isEdit && (
+            <span className="muted" style={{ fontSize: 11 }}>
+              Proposée automatiquement — remplacez-la si vous avez la vraie
+              référence.
+            </span>
+          )}
         </div>
         <div className="field">
           <label>
@@ -588,7 +646,10 @@ function PartForm({
           )}
 
           {/* Sélecteur : marque puis cases à cocher des modèles */}
-          <div className="row-flex mt-8" style={{ alignItems: "flex-start", gap: 12 }}>
+          <div
+            className="row-flex mt-8"
+            style={{ alignItems: "flex-start", gap: 12 }}
+          >
             <div className="field" style={{ minWidth: 180 }}>
               <label>Marque</label>
               <select
@@ -607,23 +668,36 @@ function PartForm({
 
             <div style={{ flex: 1 }}>
               <label className="field">
-                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)" }}>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "var(--text-muted)",
+                  }}
+                >
                   Modèles de la marque
                 </span>
               </label>
               {!brandFilter ? (
-                <div className="muted" style={{ fontSize: 12, padding: "6px 0" }}>
+                <div
+                  className="muted"
+                  style={{ fontSize: 12, padding: "6px 0" }}
+                >
                   Sélectionnez une marque pour voir ses modèles.
                 </div>
               ) : (models.data ?? []).length === 0 ? (
-                <div className="muted" style={{ fontSize: 12, padding: "6px 0" }}>
+                <div
+                  className="muted"
+                  style={{ fontSize: 12, padding: "6px 0" }}
+                >
                   Aucun modèle pour cette marque.
                 </div>
               ) : (
                 <div className="checkbox-grid">
                   {models.data!.map((m) => {
                     const brandName =
-                      brands.data?.items.find((b) => b.id === brandFilter)?.name ?? "";
+                      brands.data?.items.find((b) => b.id === brandFilter)
+                        ?.name ?? "";
                     const label = `${brandName} ${m.name}`;
                     return (
                       <label key={m.id} className="checkbox-item">
