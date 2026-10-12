@@ -10,7 +10,7 @@ const UNIT_PLURALS: Record<string, string> = {
   "jeu": "jeux",
   "paire": "paires",
   "litre": "litres",
-  "kg": "kg",           // symbole → invariable
+  "kg": "kg",          // symbole → invariable
   "mètre": "mètres",
   "boîte": "boîtes",
   "lot": "lots",
